@@ -122,6 +122,15 @@ async function initTables() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_moments_created ON moments(created_at DESC)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_friendships_users ON friendships(user_id, friend_id)`);
 
+    // 迁移：添加 birthday 和 gender 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday TEXT DEFAULT ''`);
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT DEFAULT ''`);
+      console.log('Migration: birthday/gender columns ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
     await client.query('COMMIT');
     console.log('All tables initialized');
   } catch (e) {
