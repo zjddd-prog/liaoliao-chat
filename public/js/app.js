@@ -1425,32 +1425,45 @@ const App = {
             const body = `
                 <div class="bubble-shop">
                     <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
-                        选择你喜欢的气泡样式，用积分兑换后即可使用。管理员免费使用全部气泡。
+                        选择你喜欢的气泡样式。管理员免费使用全部气泡。
                     </p>
                     <div class="bubble-grid">
                         ${bubbles.map(b => {
-                            const colors = ['#fff', '#e8f5e9', '#ede7f6', '#fff3e0', '#e3f2fd'];
-                            const status = b.equipped ? `<span class="bubble-badge equipped">使用中</span>`
-                                : b.owned ? `<span class="bubble-badge owned">已拥有</span>`
+                            const colors = ['#fafafa', '#e8f5e9', '#ede7f6', '#fce4ec', '#fff8e1'];
+                            const iconMap = ['💬', '🌿', '✨', '🌸', '👑'];
+                            const statusHTML = b.equipped ? '<span class="bubble-badge equipped">使用中</span>'
+                                : (b.owned && b.isDay) ? '<span class="bubble-badge day">1天</span>'
+                                : (b.owned && !b.isDay) ? '<span class="bubble-badge owned">已拥有</span>'
                                 : '';
+                            const dayPrice = Math.max(1, Math.floor(b.price * 0.3));
                             return `
-                            <div class="bubble-item ${b.equipped ? 'equipped' : ''}">
-                                <div class="bubble-preview ${b.class}" style="background:${colors[b.id]};border:2px solid ${b.equipped ? '#667eea' : '#e0e0e0'};">
-                                    <div class="bubble-preview-msg" style="background: linear-gradient(135deg, ${this.getBubbleGradients()[b.id]});">示例消息</div>
+                            <div class="bubble-item ${b.equipped ? 'equipped' : ''} ${b.class}">
+                                <div class="bubble-preview" style="background:${colors[b.id]};">
+                                    <div class="bubble-preview-icon">${iconMap[b.id]}</div>
+                                    <div class="bubble-preview-msg" style="background: linear-gradient(135deg, ${this.getBubbleGradients()[b.id]});">${b.name}</div>
+                                    ${b.id === 4 ? '<div class="bubble-crown-badge">👑</div>' : ''}
                                 </div>
                                 <div class="bubble-info">
                                     <div class="bubble-name">${b.name}</div>
                                     <div class="bubble-desc">${b.desc}</div>
-                                    <div class="bubble-price">${b.price === 0 ? '免费' : '🪙 ' + b.price + ' 积分'}</div>
-                                    ${status}
+                                    <div class="bubble-price-row">
+                                        <span class="bubble-price ${b.price === 0 ? 'free' : ''}">${b.price === 0 ? '免费' : '永久 🪙' + b.price}</span>
+                                        ${b.price > 0 ? `<span class="bubble-price-day">1天 🪙${dayPrice}</span>` : ''}
+                                    </div>
+                                    ${statusHTML}
                                 </div>
                                 <div class="bubble-actions">
-                                    ${b.equipped ? '' :
+                                    ${b.equipped ? '<button class="btn-secondary btn-sm" disabled>当前气泡</button>' :
                                         b.owned ?
-                                        `<button class="btn-secondary btn-sm" onclick="App.equipBubble(${b.id})">装备</button>` :
+                                        '<button class="btn-primary btn-sm" onclick="App.equipBubble(' + b.id + ')">装备</button>' :
+                                        b.price === 0 ?
+                                        '<button class="btn-primary btn-sm" onclick="App.equipBubble(0)">使用</button>' :
                                         b.canAfford ?
-                                        `<button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id})">${b.price === 0 ? '装备' : '兑换'}</button>` :
-                                        `<button class="btn-secondary btn-sm" disabled>积分不足</button>`
+                                        `<div style="display:flex;flex-direction:column;gap:4px;">
+                                            <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'day')">1天 🪙${dayPrice}</button>
+                                            <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'permanent')">永久 🪙${b.price}</button>
+                                        </div>` :
+                                        '<button class="btn-secondary btn-sm" disabled>积分不足</button>'
                                     }
                                 </div>
                             </div>`;
@@ -1467,16 +1480,16 @@ const App = {
     getBubbleGradients() {
         return [
             '#e0e0e0, #f5f5f5',            // 0: 经典白色
-            '#a8e6cf, #dcedc1',            // 1: 薄荷绿
-            '#a18cd1, #fbc2eb',            // 2: 星空紫
-            '#fa709a, #fee140',            // 3: 日落橙
-            '#667eea, #764ba2',            // 4: 极光幻彩
+            '#a8e6cf, #dcedc1',            // 1: 薄荷清风
+            '#a18cd1, #fbc2eb',            // 2: 星空紫韵
+            '#ff9a9e, #fecfef',            // 3: 樱花轻语
+            '#f7971e, #ffd200',            // 4: 皇冠王者 - 金色
         ];
     },
 
-    async purchaseBubble(bubbleId) {
+    async purchaseBubble(bubbleId, duration = 'permanent') {
         try {
-            const data = await this.api('/api/bubbles/purchase', 'POST', { bubbleId });
+            const data = await this.api('/api/bubbles/purchase', 'POST', { bubbleId, duration });
             this.userPoints = data.points;
             this.currentUser.points = data.points;
             this.userBubbleStyle = data.bubbleStyle;
@@ -1831,7 +1844,7 @@ const App = {
     },
 
     getBubbleClass(styleId) {
-        const classes = ['bubble-default', 'bubble-mint', 'bubble-purple', 'bubble-sunset', 'bubble-aurora'];
+        const classes = ['bubble-default', 'bubble-mint', 'bubble-purple', 'bubble-sakura', 'bubble-crown'];
         return classes[styleId] || 'bubble-default';
     },
 
