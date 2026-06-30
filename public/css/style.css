@@ -825,6 +825,26 @@ a, button, div, span, p {
     margin-left: 8px;
 }
 
+.contact-report-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--text-light);
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+    background: none;
+    cursor: pointer;
+    margin-left: 4px;
+}
+.contact-item:hover .contact-report-btn { opacity: 0.6; }
+.contact-report-btn:hover { opacity: 1; background: rgba(255, 71, 87, 0.1); color: #ff4757; }
+.contact-report-btn:active { transform: scale(0.9); }
+
 .contact-actions { display: flex; gap: 6px; margin-left: 8px; }
 
 /* ========== Moments ========== */
@@ -1519,6 +1539,9 @@ a, button, div, span, p {
     /* 通讯录 */
     .contact-item { padding: 14px 14px; transition: background 0.15s; }
     .contact-item:active { background: var(--bg); }
+    /* 移动端举报按钮始终可见 */
+    .contact-report-btn { opacity: 0.4; }
+    .contact-report-btn:active { opacity: 1; background: rgba(255, 71, 87, 0.15); color: #ff4757; transform: scale(0.9); }
     .contact-avatar { width: 46px; height: 46px; font-size: 18px; }
     .contact-info { margin-left: 12px; }
     .contact-name { font-size: 16px; }
