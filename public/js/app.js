@@ -1808,6 +1808,60 @@ const App = {
             const roleLabels = { super_admin: '👑 ' + (t('admin.superAdmin') || '超级管理员'), admin: '⭐ ' + (t('admin.admin') || '管理员'), user: '' };
 
             const contentEl = document.getElementById('profile-content');
+            const genderLabels = { '': '未设置', 'male': '男', 'female': '女', 'other': '其他' };
+            const userGender = genderLabels[user.gender] || '未设置';
+            const userBirthday = user.birthday || '';
+            const bioHTML = isSelf ? `
+                <div class="profile-bio-edit">
+                    <div class="profile-bio-text" id="profile-bio-display">${user.bio || t('profile.lazy')}</div>
+                    <button class="profile-edit-btn" onclick="App.startEditBio()" title="编辑个性签名">✏️</button>
+                </div>
+                <div class="profile-edit-form hidden" id="profile-bio-form">
+                    <textarea id="profile-bio-input" maxlength="200" placeholder="写一句个性签名...">${user.bio || ''}</textarea>
+                    <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                        <button class="btn-primary btn-sm" onclick="App.saveBio()">保存</button>
+                        <button class="btn-secondary btn-sm" onclick="App.cancelEditBio()">取消</button>
+                    </div>
+                </div>
+            ` : `<div class="profile-bio">${user.bio || t('profile.lazy')}</div>`;
+            const infoHTML = isSelf ? `
+                <div class="profile-info-edit">
+                    <div class="profile-info-row">
+                        <span class="profile-info-label">🎂 生日</span>
+                        <span class="profile-info-value" id="profile-birthday-display">${userBirthday || '未设置'}</span>
+                        <button class="profile-edit-btn" onclick="App.startEditBirthday()" title="编辑生日">✏️</button>
+                    </div>
+                    <div class="profile-edit-form hidden" id="profile-birthday-form">
+                        <input type="date" id="profile-birthday-input" value="${userBirthday}" max="${new Date().toISOString().split('T')[0]}">
+                        <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                            <button class="btn-primary btn-sm" onclick="App.saveBirthday()">保存</button>
+                            <button class="btn-secondary btn-sm" onclick="App.cancelEditBirthday()">取消</button>
+                        </div>
+                    </div>
+                    <div class="profile-info-row">
+                        <span class="profile-info-label">⚧ 性别</span>
+                        <span class="profile-info-value" id="profile-gender-display">${userGender}</span>
+                        <button class="profile-edit-btn" onclick="App.startEditGender()" title="编辑性别">✏️</button>
+                    </div>
+                    <div class="profile-edit-form hidden" id="profile-gender-form">
+                        <select id="profile-gender-input">
+                            <option value="">未设置</option>
+                            <option value="male" ${user.gender === 'male' ? 'selected' : ''}>男</option>
+                            <option value="female" ${user.gender === 'female' ? 'selected' : ''}>女</option>
+                            <option value="other" ${user.gender === 'other' ? 'selected' : ''}>其他</option>
+                        </select>
+                        <div style="display:flex;gap:6px;justify-content:center;margin-top:6px;">
+                            <button class="btn-primary btn-sm" onclick="App.saveGender()">保存</button>
+                            <button class="btn-secondary btn-sm" onclick="App.cancelEditGender()">取消</button>
+                        </div>
+                    </div>
+                </div>
+            ` : `
+                <div class="profile-info-view">
+                    ${userBirthday ? `<div class="profile-info-row"><span class="profile-info-label">🎂 生日</span><span class="profile-info-value">${userBirthday}</span></div>` : ''}
+                    ${user.gender ? `<div class="profile-info-row"><span class="profile-info-label">⚧ 性别</span><span class="profile-info-value">${userGender}</span></div>` : ''}
+                </div>
+            `;
             contentEl.innerHTML = `
                 <div class="profile-header-area">
                     <div class="profile-big-avatar" style="background:${bgColor}">${avatarHTML}</div>
@@ -1820,7 +1874,8 @@ const App = {
                     </div>` : ''}
                     <div class="profile-name">${user.nickname}</div>
                     ${user.role !== 'user' ? `<div class="profile-role-badge ${roleBadge}">${roleLabels[roleBadge]}</div>` : ''}
-                    <div class="profile-bio">${user.bio || t('profile.lazy')}</div>
+                    ${bioHTML}
+                    ${infoHTML}
                     <div class="profile-stats">
                         <span>@${user.username}</span>
                         <span>${t('profile.joined')} ${new Date(user.createdAt).toLocaleDateString()}</span>
@@ -1854,6 +1909,79 @@ const App = {
     closeProfile() {
         document.getElementById('view-profile').classList.add('hidden');
         this.switchView('chats');
+    },
+
+    // ========== 个人资料编辑 ==========
+
+    startEditBio() {
+        document.getElementById('profile-bio-display').parentElement.classList.add('hidden');
+        document.getElementById('profile-bio-form').classList.remove('hidden');
+        document.getElementById('profile-bio-input').focus();
+    },
+
+    cancelEditBio() {
+        document.getElementById('profile-bio-form').classList.add('hidden');
+        document.getElementById('profile-bio-display').parentElement.classList.remove('hidden');
+    },
+
+    async saveBio() {
+        const bio = document.getElementById('profile-bio-input').value.trim();
+        try {
+            const data = await this.api('/api/profile', 'PUT', { bio });
+            this.currentUser.bio = bio;
+            document.getElementById('profile-bio-display').textContent = bio || t('profile.lazy');
+            this.toast('个性签名已更新', 'success');
+            this.cancelEditBio();
+        } catch (e) {
+            this.toast('更新失败: ' + e.message, 'error');
+        }
+    },
+
+    startEditBirthday() {
+        document.getElementById('profile-birthday-display').parentElement.classList.add('hidden');
+        document.getElementById('profile-birthday-form').classList.remove('hidden');
+    },
+
+    cancelEditBirthday() {
+        document.getElementById('profile-birthday-form').classList.add('hidden');
+        document.getElementById('profile-birthday-display').parentElement.classList.remove('hidden');
+    },
+
+    async saveBirthday() {
+        const birthday = document.getElementById('profile-birthday-input').value;
+        try {
+            const data = await this.api('/api/profile', 'PUT', { birthday });
+            this.currentUser.birthday = birthday;
+            document.getElementById('profile-birthday-display').textContent = birthday || '未设置';
+            this.toast('生日已更新', 'success');
+            this.cancelEditBirthday();
+        } catch (e) {
+            this.toast('更新失败: ' + e.message, 'error');
+        }
+    },
+
+    startEditGender() {
+        document.getElementById('profile-gender-display').parentElement.classList.add('hidden');
+        document.getElementById('profile-gender-form').classList.remove('hidden');
+    },
+
+    cancelEditGender() {
+        document.getElementById('profile-gender-form').classList.add('hidden');
+        document.getElementById('profile-gender-display').parentElement.classList.remove('hidden');
+    },
+
+    async saveGender() {
+        const gender = document.getElementById('profile-gender-input').value;
+        const genderLabels = { '': '未设置', 'male': '男', 'female': '女', 'other': '其他' };
+        try {
+            const data = await this.api('/api/profile', 'PUT', { gender });
+            this.currentUser.gender = gender;
+            document.getElementById('profile-gender-display').textContent = genderLabels[gender] || '未设置';
+            this.toast('性别已更新', 'success');
+            this.cancelEditGender();
+        } catch (e) {
+            this.toast('更新失败: ' + e.message, 'error');
+        }
     },
 
     async blockUser(userId, nickname) {
