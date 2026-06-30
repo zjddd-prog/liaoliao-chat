@@ -406,7 +406,7 @@ const App = {
     updateNavAvatar() {
         const avatar = document.getElementById('nav-avatar');
         if (this.currentUser?.avatarUrl) {
-            avatar.innerHTML = `<img src="${this.currentUser.avatarUrl}" alt="">`;
+            avatar.innerHTML = `<img src="${this.currentUser.avatarUrl}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
             avatar.style.background = 'transparent';
         } else {
             avatar.textContent = this.currentUser?.avatarText || '?';
