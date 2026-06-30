@@ -78,7 +78,7 @@ function userToJSON(u) {
         birthday: u.birthday || '', gender: u.gender || '',
         points: u.points || 0, lastCheckinDate: u.last_checkin_date || null,
         bubbleStyle: u.bubble_style || 0, createdAt: u.created_at,
-        banned: u.banned || false
+        banned: u.banned || false, mutedUntil: u.muted_until || null
     };
 }
 
@@ -839,7 +839,7 @@ app.delete('/api/admin/user/:userId', adminMiddleware, async (req, res) => {
     }
 });
 
-app.get('/api/admin/messages/:userId', adminMiddleware, async (req, res) => {
+app.get('/api/admin/messages/:userId', superAdminMiddleware, async (req, res) => {
     try {
         const userId = req.params.userId;
         const targetR = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
@@ -881,6 +881,59 @@ app.get('/api/admin/messages/:userId', adminMiddleware, async (req, res) => {
             type: m.type, content: m.content,
             messageType: m.message_type || 'text', timestamp: m.created_at
         })));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Mute user
+app.post('/api/admin/mute/:userId', adminMiddleware, async (req, res) => {
+    try {
+        const { duration } = req.body; // '1day', '7days', 'permanent'
+        const userId = req.params.userId;
+
+        const r = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+        if (r.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+
+        const user = r.rows[0];
+        if (user.role === 'super_admin') return res.status(400).json({ error: '不能禁言超级管理员' });
+        if (user.role === 'admin' && req.user.role !== 'super_admin') return res.status(400).json({ error: '只有超级管理员可以禁言管理员' });
+
+        let mutedUntil = null;
+        if (duration === '1day') mutedUntil = Date.now() + 86400000;
+        else if (duration === '7days') mutedUntil = Date.now() + 7 * 86400000;
+        else if (duration === 'permanent') mutedUntil = 253402300799000; // Year 9999
+        else return res.status(400).json({ error: '无效的时长' });
+
+        await pool.query('UPDATE users SET muted_until = $1 WHERE id = $2', [mutedUntil, userId]);
+
+        const sockets = io.sockets.sockets;
+        for (const [sid, socket] of sockets) {
+            if (socket.userId === userId) {
+                socket.emit('muted', { mutedUntil });
+            }
+        }
+
+        res.json({ success: true, mutedUntil });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Unmute user
+app.post('/api/admin/unmute/:userId', adminMiddleware, async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        await pool.query('UPDATE users SET muted_until = NULL WHERE id = $1', [userId]);
+
+        const sockets = io.sockets.sockets;
+        for (const [sid, socket] of sockets) {
+            if (socket.userId === userId) {
+                socket.emit('unmuted', {});
+            }
+        }
+
+        res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1290,6 +1343,19 @@ io.on('connection', (socket) => {
         const fromUser = fromR.rows[0];
         const toUser = toR.rows[0];
 
+        // 禁言检查
+        if (fromUser.muted_until !== null && fromUser.muted_until > Date.now()) {
+            let muteMsg = '你已被禁言，无法发送消息。';
+            if (fromUser.muted_until === 253402300799000) {
+                muteMsg = '你已被永久禁言，无法发送消息。';
+            } else {
+                const remaining = Math.ceil((fromUser.muted_until - Date.now()) / 3600000);
+                muteMsg = `你已被禁言，剩余约 ${remaining} 小时。`;
+            }
+            socket.emit('muted-error', { message: muteMsg });
+            return;
+        }
+
         if (fromUser?.blocked_users?.includes(to)) {
             socket.emit('blocked-error', { message: '你已拉黑该用户，无法发送消息' });
             return;
@@ -1333,15 +1399,29 @@ io.on('connection', (socket) => {
         const rateKey = 'msg_' + socket.userId;
         if (!checkRateLimit(rateKey, 333)) return;
 
+        // 查询用户信息（禁言检查需要）
+        const fromR = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
+        const fromUser = fromR.rows[0];
+
+        // 禁言检查
+        if (fromUser.muted_until !== null && fromUser.muted_until > Date.now()) {
+            let muteMsg = '你已被禁言，无法发送消息。';
+            if (fromUser.muted_until === 253402300799000) {
+                muteMsg = '你已被永久禁言，无法发送消息。';
+            } else {
+                const remaining = Math.ceil((fromUser.muted_until - Date.now()) / 3600000);
+                muteMsg = `你已被禁言，剩余约 ${remaining} 小时。`;
+            }
+            socket.emit('muted-error', { message: muteMsg });
+            return;
+        }
+
         const msgId = genId('msg');
         const now = Date.now();
         await pool.query(
             "INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, read_by) VALUES ($1,'group',$2,$3,$4,$5,$6,$7)",
             [msgId, socket.userId, to, content, messageType || 'text', now, JSON.stringify([socket.userId])]
         );
-
-        const fromR = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
-        const fromUser = fromR.rows[0];
 
         io.to(to).emit('group-message', {
             id: msgId, type: 'group', from: socket.userId, to, content,
