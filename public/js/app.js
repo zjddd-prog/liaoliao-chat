@@ -407,6 +407,9 @@ const App = {
         // 构建聊天头部
         const header = `
             <div class="chat-header">
+                <button class="chat-back-btn" onclick="App.closeChatMobile()">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+                </button>
                 <div class="msg-avatar" style="background:${avatarColor}">
                     ${avatarUrl ? `<img src="${avatarUrl}" alt="">` : avatarText}
                 </div>
@@ -458,6 +461,14 @@ const App = {
         // 高亮聊天列表当前项
         this.renderChatList();
         this.hideTyping();
+
+        // 手机端：隐藏聊天列表，显示聊天详情
+        if (window.innerWidth <= 768) {
+            const listPanel = document.querySelector('.list-panel');
+            const detailPanel = document.getElementById('chat-detail');
+            if (listPanel) listPanel.classList.add('hidden');
+            if (detailPanel) detailPanel.classList.remove('hidden');
+        }
     },
 
     async loadMessages() {
@@ -479,6 +490,14 @@ const App = {
         } catch (e) {
             console.error('Failed to load messages:', e);
         }
+    },
+
+    // 手机端关闭聊天，返回聊天列表
+    closeChatMobile() {
+        const detail = document.getElementById('chat-detail');
+        const listPanel = document.querySelector('.list-panel');
+        if (listPanel) listPanel.classList.remove('hidden');
+        if (detail) detail.classList.add('hidden');
     },
 
     // ========== 发送消息 ==========
