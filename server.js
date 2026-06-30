@@ -501,6 +501,149 @@ app.get('/api/chats/last-messages', authMiddleware, async (req, res) => {
     }
 });
 
+// Combined chat list endpoint — single request returns friends, groups, unread, last messages
+app.get('/api/chat-list', authMiddleware, async (req, res) => {
+    try {
+        // 1. Get friendships and group memberships in parallel
+        const [friendshipsR, groupsR] = await Promise.all([
+            pool.query("SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'", [req.user.id]),
+            pool.query("SELECT * FROM groups_t WHERE members @> $1::jsonb OR group_type = 'public' OR id = 'g_public'", [JSON.stringify([req.user.id])])
+        ]);
+
+        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
+        const groupIds = groupsR.rows.map(g => g.id);
+
+        // 2. Get friend user profiles, unread counts, and last messages in parallel
+        const parallelTasks = [];
+
+        // Friend profiles
+        if (friendIds.length > 0) {
+            parallelTasks.push(
+                pool.query('SELECT id, username, nickname, bio, avatar_color, avatar_text, avatar_url FROM users WHERE id = ANY($1)', [friendIds])
+                    .then(r => r.rows)
+            );
+        } else {
+            parallelTasks.push(Promise.resolve([]));
+        }
+
+        // Unread private counts (batch, not loop)
+        if (friendIds.length > 0) {
+            parallelTasks.push(
+                pool.query(
+                    "SELECT sender_id, COUNT(*) as cnt FROM messages WHERE type = 'private' AND sender_id = ANY($1::text[]) AND target_id = $2 AND is_read = false GROUP BY sender_id",
+                    [friendIds, req.user.id]
+                ).then(r => {
+                    const map = {};
+                    r.rows.forEach(row => { map[row.sender_id] = parseInt(row.cnt); });
+                    return map;
+                })
+            );
+        } else {
+            parallelTasks.push(Promise.resolve({}));
+        }
+
+        // Unread group counts (batch)
+        if (groupIds.length > 0) {
+            parallelTasks.push(
+                pool.query(
+                    "SELECT target_id, COUNT(*) as cnt FROM messages WHERE type = 'group' AND target_id = ANY($1::text[]) AND sender_id != $2 AND NOT (read_by @> $3::jsonb) GROUP BY target_id",
+                    [groupIds, req.user.id, JSON.stringify([req.user.id])]
+                ).then(r => {
+                    const map = {};
+                    r.rows.forEach(row => { map[row.target_id] = parseInt(row.cnt); });
+                    return map;
+                })
+            );
+        } else {
+            parallelTasks.push(Promise.resolve({}));
+        }
+
+        // Last private messages (batch)
+        if (friendIds.length > 0) {
+            parallelTasks.push(
+                pool.query(
+                    `SELECT DISTINCT ON (
+                        CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
+                             ELSE target_id || '_' || sender_id END
+                    ) sender_id, target_id, content, message_type, created_at
+                    FROM messages
+                    WHERE type = 'private'
+                      AND ((sender_id = $1 AND target_id = ANY($2::text[]))
+                        OR (sender_id = ANY($2::text[]) AND target_id = $1))
+                    ORDER BY
+                        CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
+                             ELSE target_id || '_' || sender_id END,
+                        created_at DESC`,
+                    [req.user.id, friendIds]
+                ).then(r => {
+                    const map = {};
+                    r.rows.forEach(m => {
+                        const otherId = m.sender_id === req.user.id ? m.target_id : m.sender_id;
+                        map[otherId] = {
+                            content: m.message_type === 'image' ? '[图片]' : m.content,
+                            messageType: m.message_type,
+                            timestamp: m.created_at
+                        };
+                    });
+                    return map;
+                })
+            );
+        } else {
+            parallelTasks.push(Promise.resolve({}));
+        }
+
+        // Last group messages (batch)
+        if (groupIds.length > 0) {
+            parallelTasks.push(
+                pool.query(
+                    `SELECT DISTINCT ON (target_id) target_id, content, message_type, created_at
+                    FROM messages
+                    WHERE type = 'group' AND target_id = ANY($1::text[])
+                    ORDER BY target_id, created_at DESC`,
+                    [groupIds]
+                ).then(r => {
+                    const map = {};
+                    r.rows.forEach(m => {
+                        map[m.target_id] = {
+                            content: m.message_type === 'image' ? '[图片]' : m.content,
+                            messageType: m.message_type,
+                            timestamp: m.created_at
+                        };
+                    });
+                    return map;
+                })
+            );
+        } else {
+            parallelTasks.push(Promise.resolve({}));
+        }
+
+        const [friendProfiles, privateUnread, groupUnread, privateLastMsgs, groupLastMsgs] = await Promise.all(parallelTasks);
+
+        // 4. Build response
+        const friends = friendProfiles.map(u => ({
+            id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
+            avatarColor: u.avatar_color, avatarText: u.avatar_text,
+            avatarUrl: u.avatar_url || null,
+            unread: privateUnread[u.id] || 0,
+            lastMsg: privateLastMsgs[u.id] || null
+        }));
+
+        const groups = groupsR.rows.map(g => ({
+            id: g.id, name: g.name, description: g.description,
+            type: g.group_type || 'public', avatarColor: g.avatar_color,
+            avatarText: g.avatar_text, memberCount: g.members.length,
+            isMember: g.members.includes(req.user.id),
+            hasPassword: !!g.password, createdAt: g.created_at,
+            unread: groupUnread[g.id] || 0,
+            lastMsg: groupLastMsgs[g.id] || null
+        }));
+
+        res.json({ friends, groups, unread: { private: privateUnread, group: groupUnread }, lastMessages: { ...privateLastMsgs, ...groupLastMsgs } });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Get unread counts
 app.get('/api/messages/unread', authMiddleware, async (req, res) => {
     try {
