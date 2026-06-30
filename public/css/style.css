@@ -1327,7 +1327,7 @@ input, textarea { font-family: inherit; }
         height: 100%;
         display: flex;
         flex-direction: column;
-        padding-bottom: 56px;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     .detail-panel.hidden { display: none; }
 
@@ -1492,7 +1492,7 @@ input, textarea { font-family: inherit; }
     .nav-label { font-size: 9px; }
     .nav-badge { top: 2px; min-width: 14px; height: 14px; font-size: 9px; }
     .content-area { height: calc(100dvh - 50px); }
-    .detail-panel { padding-bottom: 50px; }
+    .detail-panel { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
     .auth-container { padding: 20px 14px; }
     .auth-logo h1 { font-size: 20px; }
