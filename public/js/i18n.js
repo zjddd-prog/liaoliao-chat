@@ -91,6 +91,27 @@ const I18N = {
         'admin.moments': { 'zh-CN': '动态管理', en: 'Moments', ja: 'モーメント管理', ko: '모먼트 관리' },
         'admin.feedbacks': { 'zh-CN': '反馈管理', en: 'Feedbacks', ja: 'フィードバック管理', ko: '피드백 관리' },
         'admin.stats': { 'zh-CN': '数据统计', en: 'Statistics', ja: '統計', ko: '통계' },
+        'admin.superAdmin': { 'zh-CN': '超级管理员', en: 'Super Admin', ja: 'スーパー管理者', ko: '최고 관리자' },
+        'admin.admin': { 'zh-CN': '管理员', en: 'Admin', ja: '管理者', ko: '관리자' },
+        'admin.user': { 'zh-CN': '普通用户', en: 'User', ja: 'ユーザー', ko: '사용자' },
+        'admin.banned': { 'zh-CN': '已封禁', en: 'Banned', ja: '停止', ko: '차단됨' },
+        'admin.ban': { 'zh-CN': '封禁', en: 'Ban', ja: '停止', ko: '차단' },
+        'admin.unban': { 'zh-CN': '解封', en: 'Unban', ja: '停止解除', ko: '차단 해제' },
+        'admin.delete': { 'zh-CN': '注销', en: 'Delete', ja: '削除', ko: '삭제' },
+        'admin.promote': { 'zh-CN': '提升', en: 'Promote', ja: '昇格', ko: '승급' },
+        'admin.setAdmin': { 'zh-CN': '设为管理员', en: 'Set as Admin', ja: '管理者に設定', ko: '관리자로 설정' },
+        'admin.viewChat': { 'zh-CN': '查看聊天', en: 'View Chat', ja: 'チャット表示', ko: '채팅 보기' },
+        'admin.muteTitle': { 'zh-CN': '禁言用户', en: 'Mute User', ja: 'ミュート', ko: '음소거' },
+        'admin.muteSelect': { 'zh-CN': '请选择禁言时长：', en: 'Select mute duration:', ja: 'ミュート期間を選択:', ko: '음소거 기간 선택:' },
+        'admin.mute1Day': { 'zh-CN': '1天', en: '1 Day', ja: '1日', ko: '1일' },
+        'admin.mute7Days': { 'zh-CN': '7天', en: '7 Days', ja: '7日', ko: '7일' },
+        'admin.mutePermanent': { 'zh-CN': '永久禁言', en: 'Permanent', ja: '永久', ko: '영구' },
+        'admin.mute': { 'zh-CN': '禁言', en: 'Mute', ja: 'ミュート', ko: '음소거' },
+        'admin.unmute': { 'zh-CN': '解除禁言', en: 'Unmute', ja: 'ミュート解除', ko: '음소거 해제' },
+        'admin.muteSuccess': { 'zh-CN': '禁言成功', en: 'Muted successfully', ja: 'ミュート完了', ko: '음소거 완료' },
+        'admin.unmuteSuccess': { 'zh-CN': '已解除禁言', en: 'Unmuted', ja: 'ミュート解除', ko: '음소거 해제됨' },
+        'admin.unmuteConfirm': { 'zh-CN': '确定要解除该用户的禁言吗？', en: 'Unmute this user?', ja: 'ミュートを解除しますか？', ko: '음소거를 해제하시겠습니까?' },
+        'admin.muted': { 'zh-CN': '已禁言', en: 'Muted', ja: 'ミュート中', ko: '음소거됨' },
 
         // ---- 用户主页 ----
         'profile.title': { 'zh-CN': '用户主页', en: 'Profile', ja: 'プロフィール', ko: '프로필' },
@@ -300,6 +321,8 @@ const I18N = {
         // ---- 空状态提示 ----
         'contacts.emptyHint': { 'zh-CN': '添加好友后，这里会显示你的通讯录', en: 'Your contacts will appear here after adding friends', ja: '友達を追加すると、ここに連絡先が表示されます', ko: '친구를 추가하면 여기에 연락처가 표시됩니다' },
         'moments.emptyHint': { 'zh-CN': '发布你的第一条动态吧', en: 'Share your first moment', ja: '最初の投稿を共有しましょう', ko: '첫 번째 순간을 공유하세요' },
+        'chat.placeholder': { 'zh-CN': '输入消息...', en: 'Type a message...', ja: 'メッセージを入力...', ko: '메시지 입력...' },
+        'error.muted': { 'zh-CN': '你已被禁言，无法发送消息', en: 'You have been muted and cannot send messages', ja: 'ミュートされており、メッセージを送信できません', ko: '음소거되어 메시지를 보낼 수 없습니다' },
     },
 
     // ========== 获取翻译 ==========
