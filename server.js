@@ -1459,26 +1459,39 @@ app.post('/api/report', authMiddleware, reportUpload.array('images', 5), async (
 app.get('/api/admin/reports', adminMiddleware, async (req, res) => {
     try {
         const r = await pool.query('SELECT * FROM reports ORDER BY created_at DESC');
-        const reports = [];
-        for (const rp of r.rows) {
-            const reporterR = await pool.query('SELECT nickname, avatar_color, avatar_text FROM users WHERE id = $1', [rp.reporter_id]);
-            const targetR = await pool.query('SELECT nickname, avatar_color, avatar_text FROM users WHERE id = $1', [rp.target_user_id]);
-            reports.push({
-                id: rp.id,
-                reporterId: rp.reporter_id,
-                reporterNickname: reporterR.rows[0]?.nickname || '未知用户',
-                reporterAvatarColor: reporterR.rows[0]?.avatar_color || '#999',
-                reporterAvatarText: reporterR.rows[0]?.avatar_text || '?',
-                targetUserId: rp.target_user_id,
-                targetNickname: targetR.rows[0]?.nickname || '未知用户',
-                targetAvatarColor: targetR.rows[0]?.avatar_color || '#999',
-                targetAvatarText: targetR.rows[0]?.avatar_text || '?',
-                content: rp.content,
-                images: rp.images || [],
-                status: rp.status,
-                createdAt: rp.created_at
-            });
-        }
+        if (r.rows.length === 0) return res.json([]);
+
+        // 批量收集所有用户ID，一次性查询
+        const userIdSet = new Set();
+        r.rows.forEach(rp => {
+            if (rp.reporter_id) userIdSet.add(rp.reporter_id);
+            if (rp.target_user_id) userIdSet.add(rp.target_user_id);
+        });
+        const userIds = [...userIdSet];
+        const usersR = userIds.length > 0
+            ? await pool.query('SELECT id, nickname, avatar_color, avatar_text FROM users WHERE id = ANY($1)', [userIds])
+            : { rows: [] };
+
+        const userMap = {};
+        usersR.rows.forEach(u => {
+            userMap[u.id] = u;
+        });
+
+        const reports = r.rows.map(rp => ({
+            id: rp.id,
+            reporterId: rp.reporter_id,
+            reporterNickname: userMap[rp.reporter_id]?.nickname || '未知用户',
+            reporterAvatarColor: userMap[rp.reporter_id]?.avatar_color || '#999',
+            reporterAvatarText: userMap[rp.reporter_id]?.avatar_text || '?',
+            targetUserId: rp.target_user_id,
+            targetNickname: userMap[rp.target_user_id]?.nickname || '未知用户',
+            targetAvatarColor: userMap[rp.target_user_id]?.avatar_color || '#999',
+            targetAvatarText: userMap[rp.target_user_id]?.avatar_text || '?',
+            content: rp.content,
+            images: rp.images || [],
+            status: rp.status,
+            createdAt: rp.created_at
+        }));
         res.json(reports);
     } catch (e) {
         res.status(500).json({ error: e.message });
