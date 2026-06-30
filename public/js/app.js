@@ -338,6 +338,12 @@ const App = {
         this.socket.on('new-feedback', (data) => {
             this.showFeedbackDot();
         });
+
+        this.socket.on('new-report', (data) => {
+            if (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') {
+                this.toast(t('report.newReportToast') || '收到新举报：' + data.reporterNickname + ' 举报了 ' + data.targetUserId, 'info');
+            }
+        });
     },
 
     // ========== 连接状态横幅 ==========
@@ -590,6 +596,9 @@ const App = {
                     <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? t('chat.online') : t('chat.offline')) : t('chat.group')}</div>
                 </div>
                 ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${id}')">${t('chat.members')}</button>` : ''}
+                ${type === 'private' ? `<button class="chat-header-report-btn" onclick="App.showReportModal('${id}','${name}')" title="${t('report.title') || '举报'}">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                </button>` : ''}
             </div>
         `;
 
@@ -1458,6 +1467,51 @@ const App = {
                 contentEl.innerHTML = `<p style="color:red;">${e.message}</p>`;
             }
         }
+
+        else if (tab === 'admin-reports') {
+            try {
+                const reports = await this.api('/api/admin/reports');
+                if (reports.length === 0) {
+                    contentEl.innerHTML = '<p style="color:var(--text-light);text-align:center;padding:40px;">' + (t('admin.noReports') || '暂无举报') + '</p>';
+                    return;
+                }
+                contentEl.innerHTML = '<div class="reports-list">' + reports.map(rp => {
+                    let imagesHTML = '';
+                    if (rp.images && rp.images.length > 0) {
+                        imagesHTML = `<div class="report-admin-images">` + rp.images.map(img => 
+                            `<img src="${img}" onclick="App.previewImage('${img}')" style="max-width:120px;max-height:120px;border-radius:6px;cursor:pointer;object-fit:cover;" alt="">`
+                        ).join('') + `</div>`;
+                    }
+                    return `
+                    <div class="report-card">
+                        <div class="report-card-header">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div class="report-avatar" style="background:${rp.reporterAvatarColor}">${rp.reporterAvatarText}</div>
+                                <div>
+                                    <div style="font-weight:600;font-size:14px;">${rp.reporterNickname}</div>
+                                    <div style="font-size:11px;color:var(--text-light);">${this.formatTime(rp.createdAt)}</div>
+                                </div>
+                            </div>
+                            <span style="font-size:20px;color:var(--text-light);">→</span>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <div class="report-avatar" style="background:${rp.targetAvatarColor}">${rp.targetAvatarText}</div>
+                                <div style="font-weight:600;font-size:14px;color:#ff4757;">${rp.targetNickname}</div>
+                            </div>
+                        </div>
+                        <div class="report-card-content">${this.escapeHtml(rp.content)}</div>
+                        ${imagesHTML}
+                        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+                            <span class="feedback-status ${rp.status}">${rp.status === 'pending' ? (t('admin.pending') || '待处理') : (t('admin.resolved') || '已处理')}</span>
+                            <button class="btn-secondary btn-sm" onclick="App.adminResolveReport('${rp.id}')">
+                                ${rp.status === 'pending' ? (t('admin.markResolved') || '标记已处理') : (t('admin.reopen') || '重新打开')}
+                            </button>
+                        </div>
+                    </div>
+                `}).join('') + '</div>';
+            } catch (e) {
+                contentEl.innerHTML = `<p style="color:red;">${e.message}</p>`;
+            }
+        }
     },
 
     async adminBanUser(userId) {
@@ -1581,6 +1635,16 @@ const App = {
         }
     },
 
+    async adminResolveReport(reportId) {
+        try {
+            const data = await this.api(`/api/admin/report/${reportId}/resolve`, 'POST');
+            this.toast(data.status === 'resolved' ? '已标记为处理完成' : '已重新打开', 'success');
+            this.renderAdminTab('admin-reports');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
     showLanguageModal() {
         const langs = [
             { code: 'zh-CN', name: '中文', icon: '🇨🇳' },
@@ -1655,6 +1719,84 @@ const App = {
         if (this.user && this.user.role === 'admin') {
             this.toast(t('toast.newFeedback'), 'info');
         }
+    },
+
+    // ========== 举报功能 ==========
+
+    showReportModal(targetUserId, targetName) {
+        this._reportTargetUserId = targetUserId;
+        this._reportImages = [];
+        const rptPlaceholder = t('report.placeholder') || '请描述举报原因...';
+        const body = `
+            <div>
+                <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
+                    ${(t('report.desc') || '举报用户：').replace('{name}', `<strong>${this.escapeHtml(targetName)}</strong>`)}
+                </p>
+                <textarea id="report-content" placeholder="${rptPlaceholder}" 
+                    style="width:100%;min-height:100px;padding:12px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;resize:vertical;font-family:inherit;"
+                ></textarea>
+                <div style="margin-top:10px;">
+                    <label class="report-image-btn">
+                        📷 ${t('report.addImage') || '添加图片'}
+                        <input type="file" accept="image/*" id="report-image-input" style="display:none;" onchange="App.handleReportImage()">
+                    </label>
+                    <span style="font-size:11px;color:var(--text-light);margin-left:8px;">${t('report.maxImages') || '最多3张'}</span>
+                </div>
+                <div class="report-preview-images" id="report-preview-images"></div>
+            </div>
+        `;
+        const footer = `
+            <button class="btn-secondary" onclick="App.closeModal()">${t('report.cancel') || '取消'}</button>
+            <button class="btn-primary report-submit-btn" id="submit-report-btn">${t('report.submit') || '提交举报'}</button>
+        `;
+        this.showModal('⚠️ ' + (t('report.title') || '举报用户'), body, footer);
+
+        document.getElementById('submit-report-btn').addEventListener('click', async () => {
+            const content = document.getElementById('report-content').value.trim();
+            if (content.length < 2) {
+                this.toast(t('report.tooShort') || '举报内容至少2个字符', 'error');
+                return;
+            }
+            try {
+                const formData = new FormData();
+                formData.append('targetUserId', targetUserId);
+                formData.append('content', content);
+                this._reportImages.forEach(file => formData.append('images', file));
+                await this.apiUpload('/api/report', formData);
+                this.closeModal();
+                this.toast(t('report.success') || '举报已提交，管理员会尽快处理', 'success');
+            } catch (e) {
+                this.toast(e.message, 'error');
+            }
+        });
+    },
+
+    handleReportImage() {
+        const input = document.getElementById('report-image-input');
+        if (!input.files.length) return;
+        if (this._reportImages.length >= 3) {
+            this.toast(t('report.maxImages') || '最多3张图片', 'error');
+            return;
+        }
+        const file = input.files[0];
+        if (file.size > 5 * 1024 * 1024) {
+            this.toast(t('toast.imageTooBig') || '图片不能超过5MB', 'error');
+            return;
+        }
+        this._reportImages.push(file);
+        this._renderReportPreviews();
+        input.value = '';
+    },
+
+    _renderReportPreviews() {
+        const container = document.getElementById('report-preview-images');
+        if (!container) return;
+        container.innerHTML = this._reportImages.map((file, i) => `
+            <div class="report-preview-item">
+                <img src="${URL.createObjectURL(file)}" alt="">
+                <button class="report-preview-remove" onclick="App._reportImages.splice(${i},1);App._renderReportPreviews();">✕</button>
+            </div>
+        `).join('');
     },
 
     // ========== 未读消息badge ==========
@@ -1979,7 +2121,8 @@ const App = {
                                 `<button class="btn-secondary btn-sm" onclick="App.unblockUser('${user.id}','${user.nickname}')" style="background:#43e97b;color:#fff;">✅ 取消拉黑</button>`
                                 :
                                 `<button class="btn-primary btn-sm" onclick="App.openChat('private','${user.id}','${user.nickname}','${user.avatarColor}','${user.avatarText}','${user.avatarUrl || ''}')">💬 私信</button>
-                                 <button class="btn-danger btn-sm" onclick="App.blockUser('${user.id}','${user.nickname}')" style="background:#ff4757;color:#fff;">🚫 拉黑</button>`
+                                 <button class="btn-danger btn-sm" onclick="App.blockUser('${user.id}','${user.nickname}')" style="background:#ff4757;color:#fff;">🚫 拉黑</button>
+                                 <button class="btn-warning btn-sm report-profile-btn" onclick="App.showReportModal('${user.id}','${user.nickname}')" style="background:#ff9f43;color:#fff;">⚠️ ${t('report.title') || '举报'}</button>`
                             : ''}
                         ${isSelf && (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') ?
                             `<button class="btn-primary btn-sm" onclick="App.switchView('admin')" style="background:linear-gradient(135deg,#f5576c,#f093fb);color:#fff;">🛡️ 管理后台</button>`
