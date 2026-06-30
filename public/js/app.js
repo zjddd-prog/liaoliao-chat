@@ -54,7 +54,7 @@ const App = {
         document.querySelectorAll('.nav-item[data-view]').forEach(item => {
             item.addEventListener('click', () => {
                 const view = item.dataset.view;
-                if (view === 'admin' && this.currentUser?.role !== 'admin') return;
+                if (view === 'admin' && this.currentUser?.role !== 'admin' && this.currentUser?.role !== 'super_admin') return;
                 this.switchView(view);
             });
         });
@@ -1484,8 +1484,8 @@ const App = {
                     </p>
                     <div class="bubble-grid">
                         ${bubbles.map(b => {
-                            const colors = ['#fafafa', '#e8f5e9', '#ede7f6', '#fce4ec', '#fff8e1'];
-                            const iconMap = ['💬', '🌿', '✨', '🌸', '👑'];
+                            const colors = ['#e3f2fd', '#b3e5fc', '#ffccbc', '#1a237e', '#fff8e1'];
+                            const iconMap = ['☁️', '✈️', '🌅', '🌟', '🎖️'];
                             const statusHTML = b.equipped ? '<span class="bubble-badge equipped">' + t('bubble.using') + '</span>'
                                 : (b.owned && b.isDay) ? '<span class="bubble-badge day">1' + t('bubble.day') + '</span>'
                                 : (b.owned && !b.isDay) ? '<span class="bubble-badge owned">' + t('bubble.owned') + '</span>'
@@ -1496,7 +1496,7 @@ const App = {
                                 <div class="bubble-preview" style="background:${colors[b.id]};">
                                     <div class="bubble-preview-icon">${iconMap[b.id]}</div>
                                     <div class="bubble-preview-msg" style="background: linear-gradient(135deg, ${this.getBubbleGradients()[b.id]});">${b.name}</div>
-                                    ${b.id === 4 ? '<div class="bubble-crown-badge">👑</div>' : ''}
+                                    ${b.id === 4 ? '<div class="bubble-crown-badge">🛩️</div>' : ''}
                                 </div>
                                 <div class="bubble-info">
                                     <div class="bubble-name">${b.name}</div>
@@ -1534,11 +1534,11 @@ const App = {
 
     getBubbleGradients() {
         return [
-            '#e0e0e0, #f5f5f5',            // 0: 经典白色
-            '#a8e6cf, #dcedc1',            // 1: 薄荷清风
-            '#a18cd1, #fbc2eb',            // 2: 星空紫韵
-            '#ff9a9e, #fecfef',            // 3: 樱花轻语
-            '#f7971e, #ffd200',            // 4: 皇冠王者 - 金色
+            '#87CEEB, #E0F7FA',            // 0: 晴空万里 - 天蓝到浅蓝
+            '#B3E5FC, #81D4FA',            // 1: 云霄巡航 - 淡蓝云层
+            '#FF8A65, #FFCC02',            // 2: 落日飞行 - 落日橘到金
+            '#1A237E, #4A148C, #0D47A1',   // 3: 星辰航线 - 深邃星空
+            '#FFD700, #FF8F00, #FFAB00',   // 4: 王牌机长 - 金翼闪耀
         ];
     },
 
@@ -1933,8 +1933,8 @@ const App = {
     },
 
     getBubbleClass(styleId) {
-        const classes = ['bubble-default', 'bubble-mint', 'bubble-purple', 'bubble-sakura', 'bubble-crown'];
-        return classes[styleId] || 'bubble-default';
+        const classes = ['bubble-sky', 'bubble-cloud', 'bubble-sunset', 'bubble-stars', 'bubble-captain'];
+        return classes[styleId] || 'bubble-sky';
     },
 
     escapeHtml(text) {
