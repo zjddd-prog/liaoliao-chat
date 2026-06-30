@@ -127,7 +127,6 @@ async function initTables() {
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('Table init error:', e.message);
-    throw e;
   } finally {
     client.release();
   }
