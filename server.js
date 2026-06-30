@@ -1249,6 +1249,111 @@ app.post('/api/admin/feedback/:feedbackId/resolve', adminMiddleware, async (req,
     }
 });
 
+// ========== 举报 ==========
+
+// 上传举报图片用
+const reportUpload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (/image\/.*/.test(file.mimetype)) cb(null, true);
+        else cb(new Error('Only images allowed'), false);
+    }
+});
+
+app.post('/api/report', authMiddleware, reportUpload.array('images', 5), async (req, res) => {
+    try {
+        const ip = req.ip || req.connection.remoteAddress;
+        if (!checkRateLimit('report_' + ip, 5000)) {
+            return res.status(429).json({ error: '举报太频繁，请稍后再试' });
+        }
+
+        const { targetUserId, content } = req.body;
+        if (!targetUserId) return res.status(400).json({ error: '请指定被举报用户' });
+        if (!content || content.trim().length < 2) return res.status(400).json({ error: '举报内容至少2个字符' });
+        if (targetUserId === req.user.id) return res.status(400).json({ error: '不能举报自己' });
+
+        // 检查目标用户是否存在
+        const targetR = await pool.query('SELECT id FROM users WHERE id = $1', [targetUserId]);
+        if (targetR.rows.length === 0) return res.status(404).json({ error: '目标用户不存在' });
+
+        const reportId = genId('rp');
+        const now = Date.now();
+
+        // 处理上传的图片
+        const images = (req.files || []).map(f => '/uploads/' + f.filename);
+
+        await pool.query(
+            'INSERT INTO reports (id, reporter_id, target_user_id, content, images, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+            [reportId, req.user.id, targetUserId, content.trim(), JSON.stringify(images), 'pending', now]
+        );
+
+        // 通知所有在线管理员
+        const sockets = io.sockets.sockets;
+        for (const [sid, socket] of sockets) {
+            if (socket.role === 'super_admin' || socket.role === 'admin') {
+                socket.emit('new-report', {
+                    id: reportId,
+                    reporterId: req.user.id,
+                    reporterNickname: req.user.nickname,
+                    reporterAvatarColor: req.user.avatar_color,
+                    reporterAvatarText: req.user.avatar_text,
+                    targetUserId: targetUserId,
+                    content: content.trim(),
+                    images,
+                    status: 'pending',
+                    createdAt: now
+                });
+            }
+        }
+
+        res.json({ success: true, id: reportId });
+    } catch (e) {
+        res.status(500).json({ error: '举报失败: ' + e.message });
+    }
+});
+
+app.get('/api/admin/reports', adminMiddleware, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT * FROM reports ORDER BY created_at DESC');
+        const reports = [];
+        for (const rp of r.rows) {
+            const reporterR = await pool.query('SELECT nickname, avatar_color, avatar_text FROM users WHERE id = $1', [rp.reporter_id]);
+            const targetR = await pool.query('SELECT nickname, avatar_color, avatar_text FROM users WHERE id = $1', [rp.target_user_id]);
+            reports.push({
+                id: rp.id,
+                reporterId: rp.reporter_id,
+                reporterNickname: reporterR.rows[0]?.nickname || '未知用户',
+                reporterAvatarColor: reporterR.rows[0]?.avatar_color || '#999',
+                reporterAvatarText: reporterR.rows[0]?.avatar_text || '?',
+                targetUserId: rp.target_user_id,
+                targetNickname: targetR.rows[0]?.nickname || '未知用户',
+                targetAvatarColor: targetR.rows[0]?.avatar_color || '#999',
+                targetAvatarText: targetR.rows[0]?.avatar_text || '?',
+                content: rp.content,
+                images: rp.images || [],
+                status: rp.status,
+                createdAt: rp.created_at
+            });
+        }
+        res.json(reports);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/admin/report/:reportId/resolve', adminMiddleware, async (req, res) => {
+    try {
+        const r = await pool.query('SELECT * FROM reports WHERE id = $1', [req.params.reportId]);
+        if (r.rows.length === 0) return res.status(404).json({ error: '举报不存在' });
+        const newStatus = r.rows[0].status === 'resolved' ? 'pending' : 'resolved';
+        await pool.query('UPDATE reports SET status = $1 WHERE id = $2', [newStatus, req.params.reportId]);
+        res.json({ success: true, status: newStatus });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // ========== Block / Unblock ==========
 
 app.post('/api/block/:userId', authMiddleware, async (req, res) => {
