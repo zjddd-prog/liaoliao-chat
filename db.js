@@ -113,6 +113,18 @@ async function initTables() {
       )
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY,
+        reporter_id TEXT NOT NULL,
+        target_user_id TEXT NOT NULL,
+        content TEXT DEFAULT '',
+        images JSONB DEFAULT '[]',
+        status TEXT DEFAULT 'pending',
+        created_at BIGINT NOT NULL
+      )
+    `);
+
     // Indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_messages_sender_target ON messages(sender_id, target_id)`);
@@ -121,6 +133,9 @@ async function initTables() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_moments_user ON moments(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_moments_created ON moments(created_at DESC)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_friendships_users ON friendships(user_id, friend_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_reports_reporter ON reports(reporter_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_reports_created ON reports(created_at DESC)`);
 
     // 迁移：添加 birthday 和 gender 字段（如果不存在）
     try {
