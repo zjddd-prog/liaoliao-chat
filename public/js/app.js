@@ -67,9 +67,43 @@ const App = {
             this.renderChatList();
         });
 
+        // 聊天列表事件委托——提升移动端触控可靠性
+        document.getElementById('chat-list')?.addEventListener('click', (e) => {
+            const chatItem = e.target.closest('.chat-item');
+            if (!chatItem) return;
+            // 如果点击的是头像，由 viewProfile 处理
+            if (e.target.closest('.chat-avatar')) return;
+            const type = chatItem.dataset.chatType;
+            const id = chatItem.dataset.chatId;
+            const name = chatItem.dataset.chatName;
+            const avatarColor = chatItem.dataset.avatarColor;
+            const avatarText = chatItem.dataset.avatarText;
+            const avatarUrl = chatItem.dataset.avatarUrl || '';
+            if (type && id && name) {
+                this.openChat(type, id, name, avatarColor, avatarText, avatarUrl);
+            }
+        });
+
         // 通讯录搜索
         document.getElementById('contact-search')?.addEventListener('input', e => {
             this.renderContacts(e.target.value.toLowerCase());
+        });
+
+        // 通讯录列表事件委托——点击联系人打开聊天
+        document.getElementById('contacts-list')?.addEventListener('click', (e) => {
+            const contactItem = e.target.closest('.contact-item');
+            if (!contactItem) return;
+            // 如果点击的是头像或举报按钮，不打开聊天
+            if (e.target.closest('.contact-avatar') || e.target.closest('.contact-report-btn')) return;
+            const type = contactItem.dataset.chatType;
+            const id = contactItem.dataset.chatId;
+            const name = contactItem.dataset.chatName;
+            const avatarColor = contactItem.dataset.avatarColor;
+            const avatarText = contactItem.dataset.avatarText;
+            const avatarUrl = contactItem.dataset.avatarUrl || '';
+            if (type && id && name) {
+                this.openChat(type, id, name, avatarColor, avatarText, avatarUrl);
+            }
         });
 
         // 图片预览
@@ -128,6 +162,15 @@ const App = {
         this.userBubbleStyle = this.currentUser?.bubbleStyle || 0;
         this.updateNavAvatar();
         this.updatePointsDisplay();
+
+        // 移动端/平板：确保初始显示聊天列表（detail-panel 默认隐藏）
+        if (window.innerWidth <= 1024) {
+            const detailPanel = document.getElementById('chat-detail');
+            const listPanel = document.querySelector('.list-panel');
+            if (detailPanel) detailPanel.classList.add('hidden');
+            if (listPanel) listPanel.classList.remove('hidden');
+        }
+
         this.connectSocket();
         this.renderAll();
         // 移动端/平板键盘适配（<=1024px 都需要虚拟键盘适配）
@@ -135,7 +178,10 @@ const App = {
             this.setupMobileKeyboardHandler();
         }
         // 监听窗口大小变化（iPad旋转/分屏时重新评估键盘处理）
-        window.addEventListener('resize', this._onResize);
+        if (!this._onResizeBound) {
+            this._onResizeBound = () => this._onResize();
+        }
+        window.addEventListener('resize', this._onResizeBound);
         // 显示管理员入口 (both super_admin and admin)
         if (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') {
             document.getElementById('nav-admin').classList.remove('hidden');
@@ -145,10 +191,10 @@ const App = {
     _onResize() {
         // 超过1024px的设备清除键盘处理
         if (window.innerWidth > 1024) {
-            if (App._keyboardHandler && window.visualViewport) {
-                window.visualViewport.removeEventListener('resize', App._keyboardHandler);
-                window.visualViewport.removeEventListener('scroll', App._keyboardHandler);
-                App._keyboardHandler = null;
+            if (this._keyboardHandler && window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', this._keyboardHandler);
+                window.visualViewport.removeEventListener('scroll', this._keyboardHandler);
+                this._keyboardHandler = null;
             }
             // 清除输入区域transform
             const inputArea = document.querySelector('.chat-input-area');
@@ -156,8 +202,8 @@ const App = {
                 inputArea.style.transform = '';
                 inputArea.style.transition = '';
             }
-        } else if (!App._keyboardHandler) {
-            App.setupMobileKeyboardHandler();
+        } else if (!this._keyboardHandler) {
+            this.setupMobileKeyboardHandler();
         }
     },
 
@@ -212,9 +258,9 @@ const App = {
 
     logout() {
         // 清理resize监听器
-        if (this._onResize) {
-            window.removeEventListener('resize', this._onResize);
-            this._onResize = null;
+        if (this._onResizeBound) {
+            window.removeEventListener('resize', this._onResizeBound);
+            this._onResizeBound = null;
         }
         // 清理聊天相关资源
         this.cleanupChatResources();
@@ -674,7 +720,7 @@ const App = {
                     : '';
                 const openChatAttr = this._ao('openChat', item.type, item.id, item.name, item.avatarColor, item.avatarText, item.avatarUrl || '');
                 return `
-                    <div class="chat-item ${isActive ? 'active' : ''}">
+                    <div class="chat-item ${isActive ? 'active' : ''}" data-chat-type="${this.escapeAttr(item.type)}" data-chat-id="${this.escapeAttr(item.id)}" data-chat-name="${this.escapeAttr(item.name)}" data-avatar-color="${this.escapeAttr(item.avatarColor)}" data-avatar-text="${this.escapeAttr(item.avatarText)}" data-avatar-url="${this.escapeAttr(item.avatarUrl || '')}">
                         <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(item.id)}')" title="查看主页">${avatarHTML}</div>
                         <div class="chat-info" ${openChatAttr}>
                             <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${this.escapeHtml(item.name)}</span> ${memberTag}</div>
@@ -803,11 +849,10 @@ const App = {
         } else {
             // 移动端只更新active类，不重新请求数据
             document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
-            // 简单标记当前激活项
+            // 使用 data-* 属性匹配当前项
             const items = document.querySelectorAll('.chat-item');
             items.forEach(item => {
-                const infoEl = item.querySelector('.chat-info');
-                if (infoEl && infoEl.getAttribute('onclick') && infoEl.getAttribute('onclick').includes(`'${type}','${id}'`)) {
+                if (item.dataset.chatType === type && item.dataset.chatId === id) {
                     item.classList.add('active');
                 }
             });
@@ -895,6 +940,10 @@ const App = {
 
         // 如果不是骨架屏状态（已有消息内容），不覆盖
         const hasSkeleton = area.querySelector('.loading-skeleton');
+        if (!hasSkeleton && area.children.length > 0) {
+            // 已有消息，不重新加载
+            return;
+        }
         if (!hasSkeleton) {
             area.innerHTML = `
                 <div class="loading-skeleton">
@@ -913,12 +962,23 @@ const App = {
                 const url = this.currentChatType === 'private'
                     ? `/api/messages/private/${this.currentChatId}`
                     : `/api/messages/group/${this.currentChatId}`;
-                const messages = await this.api(url);
+
+                // 添加超时控制（Render 服务器可能响应慢）
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const res = await fetch(url, {
+                    headers: { Authorization: this.token },
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                const messages = await res.json();
+                if (!res.ok) throw new Error(messages.error || '加载失败');
 
                 area.innerHTML = '';
 
                 if (messages.length === 0) {
-                    area.innerHTML = `<div class="empty-state"><p>${t('chat.startChat') || '开始聊天吧'}</p></div>`;
+                    area.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text-light)" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><p>${t('chat.startChat') || '开始聊天吧'}</p><p style="font-size:12px;color:var(--text-light);">${t('chat.noMessagesHint') || '发送第一条消息'}</p></div>`;
                 } else {
                     messages.forEach(msg => {
                         const isSelf = msg.from === this.currentUser.id;
@@ -930,15 +990,21 @@ const App = {
                 return; // 成功，退出
             } catch (e) {
                 retryCount++;
+                const isTimeout = e.name === 'AbortError';
                 if (retryCount > maxRetries) {
                     console.error('Failed to load messages:', e);
+                    const errorMsg = isTimeout
+                        ? '服务器响应超时，请检查网络后重试'
+                        : (t('chat.loadFailed') || '加载消息失败');
                     area.innerHTML = `<div class="empty-state">
-                        <p>加载消息失败</p>
+                        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text-light)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                        <p style="color:var(--text-light);">${errorMsg}</p>
                         <button class="btn-primary btn-sm" onclick="App.loadMessages()" style="margin-top:12px;">重试</button>
+                        <button class="btn-secondary btn-sm" onclick="App.closeChatMobile()" style="margin-top:8px;display:${window.innerWidth<=1024?'inline-block':'none'};">返回</button>
                     </div>`;
                 } else {
                     // 短暂延迟后重试
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 1500));
                 }
             }
         }
@@ -1267,12 +1333,15 @@ const App = {
                     const escId = this.escapeAttr(f.id);
                     const openChatAttr = this._ao('openChat', 'private', f.id, f.nickname, f.avatarColor, f.avatarText, f.avatarUrl || '');
                     return `
-                        <div class="contact-item">
+                        <div class="contact-item" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(f.nickname)}" data-avatar-color="${this.escapeAttr(f.avatarColor)}" data-avatar-text="${this.escapeAttr(f.avatarText)}" data-avatar-url="${this.escapeAttr(f.avatarUrl || '')}">
                             <div class="contact-avatar" style="background:${bgColor}" onclick="event.stopPropagation();App.viewProfile('${escId}')" title="查看主页">${avatarHTML}</div>
                             <div class="contact-info" ${openChatAttr}>
                                 <div class="contact-name"><span onclick="event.stopPropagation();App.viewProfile('${escId}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--primary-light);text-underline-offset:2px;">${this.escapeHtml(f.nickname)}</span></div>
                                 <div class="contact-bio">${this.escapeHtml(f.bio || '')}</div>
                             </div>
+                            <button class="contact-report-btn" onclick="event.stopPropagation();App.showReportModal('${escId}','${this.escapeAttr(f.nickname)}')" title="${t('report.title') || '举报'}">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                            </button>
                             ${isOnline ? '<div class="contact-online-dot"></div>' : ''}
                         </div>
                     `;
@@ -2816,10 +2885,13 @@ const App = {
         return div.innerHTML;
     },
 
-    // 安全转义用于 HTML 属性内的 JS 字符串值（防止 XSS）
+    // 安全转义用于 HTML 属性内的 JS 字符串值（防止 XSS/属性断裂）
     escapeAttr(val) {
         if (val == null) return '';
-        return String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        return String(val)
+            .replace(/\\/g, '\\\\')   // 反斜杠
+            .replace(/'/g, "\\'")     // 单引号
+            .replace(/"/g, '&quot;');  // 双引号（防止属性值提前闭合）
     },
 
     // 批量生成安全的 onclick 属性
