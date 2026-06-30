@@ -1381,12 +1381,20 @@ const App = {
     updatePointsDisplay() {
         const el = document.getElementById('points-value');
         if (el) el.textContent = this.userPoints;
-        // Update checkin button state
-        const btn = document.getElementById('checkin-btn');
-        if (btn && this.currentUser?.lastCheckinDate === new Date().toDateString()) {
-            btn.textContent = '已签';
-            btn.classList.add('checked');
-        }
+        // Update both checkin buttons
+        const btns = ['checkin-btn', 'checkin-mobile-btn'];
+        const today = new Date().toDateString();
+        btns.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                if (this.currentUser?.lastCheckinDate === today) {
+                    btn.textContent = '已签';
+                    btn.classList.add('checked');
+                } else {
+                    btn.classList.remove('checked');
+                }
+            }
+        });
     },
 
     async doCheckin() {
@@ -1398,8 +1406,11 @@ const App = {
             this.updatePointsDisplay();
             this.toast(data.message, 'success');
         } catch (e) {
-            if (e.message.includes('已经签到')) {
+            if (e.message.includes('已经签到') || e.message.includes('签过')) {
                 this.toast('今天已经签过到啦！明天再来吧~', 'info');
+                // Still update button states
+                this.currentUser.lastCheckinDate = new Date().toDateString();
+                this.updatePointsDisplay();
             } else {
                 this.toast(e.message, 'error');
             }
@@ -1608,10 +1619,16 @@ const App = {
         document.getElementById('view-donation').classList.remove('hidden');
         document.querySelectorAll('.nav-item[data-view]').forEach(v => v.classList.remove('active'));
 
+        // Show/hide header upload button
+        const headerBtn = document.getElementById('donation-upload-btn');
+        if (headerBtn) {
+            headerBtn.style.display = (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') ? '' : 'none';
+        }
+
         try {
             const donation = await this.api('/api/donation');
             const contentEl = document.getElementById('donation-content');
-            const isAdmin = this.currentUser?.role === 'super_admin';
+            const isAdmin = this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin';
 
             let html = '<div style="text-align:center;padding:20px;">';
             html += '<p style="font-size:14px;color:var(--text-light);margin-bottom:20px;">如果觉得聊聊不错，欢迎请开发者喝杯咖啡 ☕</p>';
