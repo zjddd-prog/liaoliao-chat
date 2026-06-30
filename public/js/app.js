@@ -950,12 +950,15 @@ const App = {
                     <div class="skeleton-msg skeleton-other"></div>
                     <div class="skeleton-msg skeleton-other short"></div>
                     <div class="skeleton-msg skeleton-self"></div>
+                    <div class="skeleton-msg skeleton-other"></div>
+                    <div class="skeleton-msg skeleton-self short"></div>
                 </div>
             `;
         }
 
         let retryCount = 0;
-        const maxRetries = 2;
+        const maxRetries = 3;
+        let lastError = null;
 
         while (retryCount <= maxRetries) {
             try {
@@ -963,9 +966,9 @@ const App = {
                     ? `/api/messages/private/${this.currentChatId}`
                     : `/api/messages/group/${this.currentChatId}`;
 
-                // 添加超时控制（Render 服务器可能响应慢）
+                // 添加超时控制（Render 免费服务器冷启动可能很慢）
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const timeoutId = setTimeout(() => controller.abort(), 25000);
                 const res = await fetch(url, {
                     headers: { Authorization: this.token },
                     signal: controller.signal
@@ -973,7 +976,7 @@ const App = {
                 clearTimeout(timeoutId);
 
                 const messages = await res.json();
-                if (!res.ok) throw new Error(messages.error || '加载失败');
+                if (!res.ok) throw new Error(messages.error || t('chat.loadFailed') || '加载消息失败');
 
                 area.innerHTML = '';
 
@@ -989,22 +992,28 @@ const App = {
                 this.scrollToBottom(true);
                 return; // 成功，退出
             } catch (e) {
+                lastError = e;
                 retryCount++;
                 const isTimeout = e.name === 'AbortError';
+                console.warn(`loadMessages attempt ${retryCount} failed:`, e.message || e);
                 if (retryCount > maxRetries) {
-                    console.error('Failed to load messages:', e);
-                    const errorMsg = isTimeout
-                        ? '服务器响应超时，请检查网络后重试'
+                    console.error('Failed to load messages after retries:', e);
+                    let errorMsg = isTimeout
+                        ? (t('chat.loadTimeout') || '服务器响应较慢，请稍后重试')
                         : (t('chat.loadFailed') || '加载消息失败');
+                    if (lastError && lastError.message && !isTimeout) {
+                        errorMsg += ` (${this.escapeHtml(lastError.message)})`;
+                    }
                     area.innerHTML = `<div class="empty-state">
                         <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="var(--text-light)" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                        <p style="color:var(--text-light);">${errorMsg}</p>
-                        <button class="btn-primary btn-sm" onclick="App.loadMessages()" style="margin-top:12px;">重试</button>
+                        <p style="color:var(--text-light);margin-bottom:4px;">${errorMsg}</p>
+                        <p style="font-size:12px;color:var(--text-light);opacity:0.7;margin-bottom:12px;">${isTimeout ? '服务器可能正在启动，请等待 10-20 秒后重试' : '请检查网络连接'}</p>
+                        <button class="btn-primary btn-sm" onclick="App.loadMessages()" style="margin-top:8px;">重试</button>
                         <button class="btn-secondary btn-sm" onclick="App.closeChatMobile()" style="margin-top:8px;display:${window.innerWidth<=1024?'inline-block':'none'};">返回</button>
                     </div>`;
                 } else {
-                    // 短暂延迟后重试
-                    await new Promise(r => setTimeout(r, 1500));
+                    // 短暂延迟后重试，指数退避
+                    await new Promise(r => setTimeout(r, 1500 * retryCount));
                 }
             }
         }
