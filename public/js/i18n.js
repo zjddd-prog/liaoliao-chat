@@ -337,6 +337,8 @@ const I18N = {
         'moments.emptyHint': { 'zh-CN': '发布你的第一条动态吧', en: 'Share your first moment', ja: '最初の投稿を共有しましょう', ko: '첫 번째 순간을 공유하세요' },
         'chat.placeholder': { 'zh-CN': '输入消息...', en: 'Type a message...', ja: 'メッセージを入力...', ko: '메시지 입력...' },
         'error.muted': { 'zh-CN': '你已被禁言，无法发送消息', en: 'You have been muted and cannot send messages', ja: 'ミュートされており、メッセージを送信できません', ko: '음소거되어 메시지를 보낼 수 없습니다' },
+        'error.noChatSelected': { 'zh-CN': '请先选择一个聊天', en: 'Please select a chat first', ja: 'まずチャットを選択してください', ko: '먼저 채팅을 선택하세요' },
+        'error.disconnected': { 'zh-CN': '连接已断开，正在重连...', en: 'Connection lost, reconnecting...', ja: '接続が切断されました、再接続中...', ko: '연결이 끊어졌습니다, 다시 연결 중...' },
     },
 
     // ========== 获取翻译 ==========
