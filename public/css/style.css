@@ -1961,6 +1961,45 @@ input, textarea { font-family: inherit; }
 
 .profile-moments { display: flex; flex-direction: column; gap: 10px; }
 
+/* 个人资料编辑 */
+.profile-bio-edit {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    margin-top: 8px; max-width: 320px; margin-left: auto; margin-right: auto;
+}
+.profile-bio-text {
+    font-size: 14px; color: var(--text); font-style: italic;
+    max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.profile-edit-btn {
+    background: none; border: none; cursor: pointer; font-size: 14px;
+    opacity: 0.5; transition: opacity 0.2s; padding: 2px;
+}
+.profile-edit-btn:hover { opacity: 1; }
+.profile-edit-form {
+    margin-top: 8px; max-width: 300px; margin-left: auto; margin-right: auto;
+}
+.profile-edit-form textarea {
+    width: 100%; min-height: 60px; padding: 8px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; resize: vertical; font-family: inherit;
+}
+.profile-edit-form input[type="date"] {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; width: 100%; box-sizing: border-box;
+}
+.profile-edit-form select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; width: 100%; box-sizing: border-box; background: #fff;
+}
+.profile-info-edit { margin-top: 12px; max-width: 300px; margin-left: auto; margin-right: auto; text-align: left; }
+.profile-info-view { margin-top: 12px; max-width: 300px; margin-left: auto; margin-right: auto; text-align: left; }
+.profile-info-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 0;
+    border-bottom: 1px solid var(--border); justify-content: space-between;
+}
+.profile-info-row:last-child { border-bottom: none; }
+.profile-info-label { font-size: 13px; color: var(--text-light); min-width: 60px; }
+.profile-info-value { font-size: 14px; color: var(--text); flex: 1; text-align: right; }
+
 /* ========== Skeleton Loading ========== */
 .loading-skeleton {
     display: flex;
