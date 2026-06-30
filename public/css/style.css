@@ -1200,7 +1200,7 @@ input, textarea { font-family: inherit; }
 
 /* ========== Responsive 手机端适配 ========== */
 @media (max-width: 768px) {
-    /* 手机端隐藏左侧边栏，改用底部导航栏 */
+    /* 手机端：侧边栏改为底部 Tab 栏，只显示 .nav-items */
     .sidebar {
         position: fixed;
         bottom: 0;
@@ -1209,72 +1209,79 @@ input, textarea { font-family: inherit; }
         width: 100%;
         height: 56px;
         flex-direction: row;
-        padding: 0 4px;
-        z-index: 100;
-        border-top: 1px solid #444;
-        background: var(--sidebar-bg);
-    }
-    .sidebar-top { display: none; }
-    .sidebar-points { display: none; }
-    .checkin-mobile-btn { display: flex; }
-    .sidebar-bottom {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        justify-content: center;
-        margin-top: 0;
-        width: 100%;
-    }
-    .sidebar-btn {
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-        gap: 2px;
         padding: 0;
+        z-index: 100;
+        border-top: 1px solid var(--border);
+        background: var(--sidebar-bg);
+        display: flex;
+        align-items: stretch;
+    }
+    /* 隐藏桌面端专属元素 */
+    .sidebar-top { display: none !important; }
+    .sidebar-points { display: none !important; }
+    .sidebar-bottom { display: none !important; }
+    .checkin-mobile-btn { display: none !important; }
+
+    /* .nav-items 作为底部 Tab 栏 */
+    .nav-items {
+        display: flex !important;
+        flex-direction: row;
+        width: 100%;
+        height: 56px;
+        margin: 0;
+        padding: 0;
+        gap: 0;
+    }
+    .nav-item {
         flex: 1;
         height: 56px;
         border-radius: 0;
+        flex-direction: column;
+        gap: 2px;
+        justify-content: center;
+        align-items: center;
+        padding: 4px 2px 2px;
         font-size: 10px;
         color: var(--text-light);
         background: none;
         border: none;
         cursor: pointer;
-        display: flex;
+        position: relative;
+        display: flex !important;
     }
-    .sidebar-btn svg { width: 20px; height: 20px; }
-    .sidebar-btn-label { display: block; font-size: 10px; }
-    .sidebar-btn:hover { background: var(--bg); color: var(--text); }
-    .checkin-mobile-btn.checked { color: #f5576c; }
-    .sidebar-bottom .feedback-btn {
-        justify-content: center;
-        align-items: center;
-        flex-direction: column;
-        gap: 2px;
-        padding: 0;
-        flex: 1;
-        height: 56px;
-        border-radius: 0;
+    .nav-item.hidden { display: none !important; }
+    .nav-item.active {
+        color: var(--primary);
+    }
+    .nav-item.active::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 24px;
+        height: 3px;
+        border-radius: 0 0 3px 3px;
+        background: var(--primary);
+    }
+    .nav-item svg { width: 22px; height: 22px; flex-shrink: 0; }
+    .nav-label { display: block; font-size: 10px; line-height: 1; margin-top: 1px; }
+    .nav-badge {
+        position: absolute;
+        top: 4px;
+        right: 50%;
+        transform: translateX(12px);
+        background: #f5576c;
+        color: #fff;
         font-size: 10px;
-        color: var(--text-light);
+        min-width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 4px;
     }
-    .sidebar-bottom .feedback-btn svg { width: 20px; height: 20px; }
-    .sidebar-bottom .feedback-btn:hover { background: var(--bg); color: var(--text); }
-    .nav-items {
-        flex-direction: row;
-        gap: 0;
-        width: 100%;
-        justify-content: space-around;
-    }
-    .nav-item {
-        width: auto;
-        height: 56px;
-        flex: 1;
-        border-radius: 0;
-        flex-direction: column;
-        gap: 2px;
-    }
-    .nav-item svg { width: 22px; height: 22px; }
-    .nav-badge { top: 4px; right: 50%; transform: translateX(16px); }
 
     /* 手机端显示返回按钮 */
     .chat-back-btn { display: flex; }
@@ -1465,17 +1472,13 @@ input, textarea { font-family: inherit; }
 
 /* 小屏幕手机（360px - 380px） */
 @media (max-width: 380px) {
-    .sidebar { height: 48px; padding: 0 2px; }
-    .nav-item { height: 48px; }
-    .nav-item svg { width: 18px; height: 18px; }
-    .sidebar-btn { height: 48px; }
-    .sidebar-btn svg { width: 17px; height: 17px; }
-    .sidebar-btn-label { font-size: 9px; }
-    .checkin-mobile-btn { height: 48px; }
-    .sidebar-bottom .feedback-btn { height: 48px; font-size: 9px; }
-    .sidebar-bottom .feedback-btn svg { width: 18px; height: 18px; }
-    .content-area { height: calc(100dvh - 48px); }
-    .detail-panel { padding-bottom: 48px; }
+    .sidebar { height: 50px; }
+    .nav-item { height: 50px; padding: 3px 1px 1px; }
+    .nav-item svg { width: 20px; height: 20px; }
+    .nav-label { font-size: 9px; }
+    .nav-badge { top: 2px; min-width: 14px; height: 14px; font-size: 9px; }
+    .content-area { height: calc(100dvh - 50px); }
+    .detail-panel { padding-bottom: 50px; }
 
     .auth-container { padding: 20px 14px; }
     .auth-logo h1 { font-size: 20px; }
@@ -1960,6 +1963,35 @@ input, textarea { font-family: inherit; }
 .profile-name { font-size: 20px; font-weight: 700; color: var(--text); }
 
 .profile-moments { display: flex; flex-direction: column; gap: 10px; }
+
+/* 个人主页快捷操作 */
+.profile-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    justify-content: center;
+}
+.profile-quick-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+.profile-quick-btn:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.profile-quick-btn svg { flex-shrink: 0; }
+@media (max-width: 768px) {
+    .profile-quick-actions { gap: 6px; }
+    .profile-quick-btn { padding: 6px 10px; font-size: 12px; }
+}
 
 /* 个人资料编辑 */
 .profile-bio-edit {
