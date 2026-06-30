@@ -287,6 +287,18 @@ const I18N = {
         'group.cancelBtn': { 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル', ko: '취소' },
         'chat.private': { 'zh-CN': '私聊', en: 'PM', ja: 'DM', ko: '개인' },
         'chat.groupType': { 'zh-CN': '群聊', en: 'Group', ja: 'グループ', ko: '그룹' },
+        'chat.disconnected': { 'zh-CN': '连接已断开，正在重新连接...', en: 'Disconnected. Reconnecting...', ja: '接続が切れました。再接続中...', ko: '연결이 끊어졌습니다. 재연결 중...' },
+        'chat.reconnecting': { 'zh-CN': '重新连接中...', en: 'Reconnecting...', ja: '再接続中...', ko: '재연결 중...' },
+        'chat.connectionFailed': { 'zh-CN': '连接失败，请检查网络', en: 'Connection failed. Check network.', ja: '接続失敗。ネットワークを確認してください。', ko: '연결 실패. 네트워크를 확인하세요.' },
+
+        // ---- 时间 ----
+        'time.justNow': { 'zh-CN': '刚刚', en: 'Just now', ja: 'たった今', ko: '방금' },
+        'time.minAgo': { 'zh-CN': '分钟前', en: 'm ago', ja: '分前', ko: '분 전' },
+        'time.hourAgo': { 'zh-CN': '小时前', en: 'h ago', ja: '時間前', ko: '시간 전' },
+
+        // ---- 空状态提示 ----
+        'contacts.emptyHint': { 'zh-CN': '添加好友后，这里会显示你的通讯录', en: 'Your contacts will appear here after adding friends', ja: '友達を追加すると、ここに連絡先が表示されます', ko: '친구를 추가하면 여기에 연락처가 표시됩니다' },
+        'moments.emptyHint': { 'zh-CN': '发布你的第一条动态吧', en: 'Share your first moment', ja: '最初の投稿を共有しましょう', ko: '첫 번째 순간을 공유하세요' },
     },
 
     // ========== 获取翻译 ==========
