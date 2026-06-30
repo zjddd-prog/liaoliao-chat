@@ -130,13 +130,34 @@ const App = {
         this.updatePointsDisplay();
         this.connectSocket();
         this.renderAll();
-        // 移动端键盘适配
-        if (window.innerWidth <= 768) {
+        // 移动端/平板键盘适配（<=1024px 都需要虚拟键盘适配）
+        if (window.innerWidth <= 1024) {
             this.setupMobileKeyboardHandler();
         }
+        // 监听窗口大小变化（iPad旋转/分屏时重新评估键盘处理）
+        window.addEventListener('resize', this._onResize);
         // 显示管理员入口 (both super_admin and admin)
         if (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') {
             document.getElementById('nav-admin').classList.remove('hidden');
+        }
+    },
+
+    _onResize() {
+        // 超过1024px的设备清除键盘处理
+        if (window.innerWidth > 1024) {
+            if (App._keyboardHandler && window.visualViewport) {
+                window.visualViewport.removeEventListener('resize', App._keyboardHandler);
+                window.visualViewport.removeEventListener('scroll', App._keyboardHandler);
+                App._keyboardHandler = null;
+            }
+            // 清除输入区域transform
+            const inputArea = document.querySelector('.chat-input-area');
+            if (inputArea) {
+                inputArea.style.transform = '';
+                inputArea.style.transition = '';
+            }
+        } else if (!App._keyboardHandler) {
+            App.setupMobileKeyboardHandler();
         }
     },
 
@@ -190,6 +211,26 @@ const App = {
     },
 
     logout() {
+        // 清理resize监听器
+        if (this._onResize) {
+            window.removeEventListener('resize', this._onResize);
+            this._onResize = null;
+        }
+        // 清理聊天相关资源
+        this.cleanupChatResources();
+        // 清理键盘适配器
+        if (this._keyboardHandler && window.visualViewport) {
+            window.visualViewport.removeEventListener('resize', this._keyboardHandler);
+            window.visualViewport.removeEventListener('scroll', this._keyboardHandler);
+            this._keyboardHandler = null;
+        }
+        // 清理聊天列表缓存
+        this._chatListCache = null;
+        this._chatListCacheTime = 0;
+        this._chatListLoaded = false;
+        // 清理滚动处理器
+        this._scrollHandler = null;
+
         localStorage.removeItem('chat_token');
         this.token = null;
         this.currentUser = null;
@@ -210,11 +251,25 @@ const App = {
             console.log('Socket connected');
             this.socket.emit('auth', this.token);
             this.hideConnectionBanner();
+            // 恢复发送锁和按钮状态
+            this._sendLock = false;
+            if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = false;
+            // 恢复输入框（如果之前被禁言过）
+            const input = document.getElementById('chat-input');
+            if (input) {
+                input.disabled = false;
+                input.placeholder = t('chat.input') || '输入消息...';
+            }
         });
 
         this.socket.on('disconnect', () => {
             console.log('Socket disconnected');
             this.showConnectionBanner('disconnected', t('chat.disconnected'));
+            // 断开时禁用发送按钮
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = true;
         });
 
         this.socket.on('reconnect_attempt', () => {
@@ -224,6 +279,11 @@ const App = {
         this.socket.on('reconnect', () => {
             this.socket.emit('auth', this.token);
             this.hideConnectionBanner();
+            // 恢复发送锁和按钮状态
+            this._sendLock = false;
+            if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = false;
         });
 
         this.socket.on('connect_error', () => {
@@ -242,12 +302,23 @@ const App = {
         });
 
         this.socket.on('private-message-sent', (msg) => {
-            // 自己发的消息确认
+            // 自己发的消息确认，释放发送锁并恢复按钮
+            this._sendLock = false;
+            if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = false;
             this.refreshChatListDebounced();
         });
 
         this.socket.on('group-message', (msg) => {
             console.log('Received group message:', msg);
+            // 如果是自己发的消息，释放发送锁并恢复按钮
+            if (msg.from === this.currentUser?.id) {
+                this._sendLock = false;
+                if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
+                const sendBtn = document.querySelector('.chat-send-btn');
+                if (sendBtn) sendBtn.disabled = false;
+            }
             if (this.currentChatType === 'group' && this.currentChatId === msg.to) {
                 const isSelf = msg.from === this.currentUser.id;
                 this.appendMessage(msg, isSelf ? 'self' : 'other');
@@ -441,8 +512,8 @@ const App = {
         document.getElementById(`view-${view}`)?.classList.remove('hidden');
 
         if (view === 'chats') {
-            // 移动端：确保返回时显示聊天列表而非旧的聊天详情
-            if (window.innerWidth <= 768) {
+            // 移动端/平板：确保返回时显示聊天列表而非旧的聊天详情
+            if (window.innerWidth <= 1024) {
                 const detailPanel = document.getElementById('chat-detail');
                 const listPanel = document.querySelector('.list-panel');
                 if (detailPanel) detailPanel.classList.add('hidden');
@@ -596,19 +667,20 @@ const App = {
                 const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
                 const memberTag = item.type === 'group' ? `<span style="font-size:12px;color:var(--text-light);">(${item.memberCount}人)</span>` : '';
                 const avatarHTML = item.avatarUrl
-                    ? `<img src="${item.avatarUrl}" alt="" loading="lazy">`
-                    : item.avatarText;
+                    ? `<img src="${this.escapeAttr(item.avatarUrl)}" alt="" loading="lazy">`
+                    : this.escapeHtml(item.avatarText);
                 const nameClickHandler = item.type === 'private'
-                    ? `onclick="event.stopPropagation();App.viewProfile('${item.id}')"`
+                    ? `onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(item.id)}')"`
                     : '';
+                const openChatAttr = this._ao('openChat', item.type, item.id, item.name, item.avatarColor, item.avatarText, item.avatarUrl || '');
                 return `
                     <div class="chat-item ${isActive ? 'active' : ''}">
-                        <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${item.id}')" title="查看主页">${avatarHTML}</div>
-                        <div class="chat-info" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
-                            <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${item.name}</span> ${memberTag}</div>
-                            <div class="chat-last-msg">${item.lastMsg || t('chat.startChat')}</div>
+                        <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(item.id)}')" title="查看主页">${avatarHTML}</div>
+                        <div class="chat-info" ${openChatAttr}>
+                            <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${this.escapeHtml(item.name)}</span> ${memberTag}</div>
+                            <div class="chat-last-msg">${item.lastMsg ? this.escapeHtml(item.lastMsg) : t('chat.startChat')}</div>
                         </div>
-                        <div class="chat-meta" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
+                        <div class="chat-meta" ${openChatAttr}>
                             <span class="chat-time">${item.time || ''}</span>
                             ${item.unread > 0 ? `<span class="chat-unread">${item.unread}</span>` : ''}
                         </div>
@@ -634,23 +706,26 @@ const App = {
         this.currentChatName = name;
         this._unreadBelow = 0;
 
-        const isMobile = window.innerWidth <= 768;
+        const isMobile = window.innerWidth <= 1024;
 
-        // 构建聊天头部
+        // 构建聊天头部（已转义防XSS）
+        const escId = this.escapeAttr(id);
+        const escName = this.escapeHtml(name);
+        const escAvatarUrl = this.escapeAttr(avatarUrl || '');
         const header = `
             <div class="chat-header">
                 <button class="chat-back-btn" onclick="App.closeChatMobile()">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
-                <div class="msg-avatar" style="background:${avatarColor};cursor:pointer;" onclick="App.viewProfile('${id}')">
-                    ${avatarUrl ? `<img src="${avatarUrl}" alt="">` : avatarText}
+                <div class="msg-avatar" style="background:${avatarColor};cursor:pointer;" onclick="App.viewProfile('${escId}')">
+                    ${avatarUrl ? `<img src="${escAvatarUrl}" alt="">` : this.escapeHtml(avatarText)}
                 </div>
-                <div style="cursor:pointer;" onclick="App.viewProfile('${id}')">
-                    <div class="chat-header-name">${name}</div>
+                <div style="cursor:pointer;" onclick="App.viewProfile('${escId}')">
+                    <div class="chat-header-name">${escName}</div>
                     <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? t('chat.online') : t('chat.offline')) : t('chat.group')}</div>
                 </div>
-                ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${id}')">${t('chat.members')}</button>` : ''}
-                ${type === 'private' ? `<button class="chat-header-report-btn" onclick="App.showReportModal('${id}','${name}')" title="${t('report.title') || '举报'}">
+                ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${escId}')">${t('chat.members')}</button>` : ''}
+                ${type === 'private' ? `<button class="chat-header-report-btn" onclick="App.showReportModal('${escId}','${this.escapeAttr(name)}')" title="${t('report.title') || '举报'}">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                 </button>` : ''}
             </div>
@@ -687,8 +762,9 @@ const App = {
                     </button>
                 </div>
                 <textarea class="chat-input" id="chat-input" data-i18n-placeholder="chat.input" placeholder="${t('chat.input')}" rows="1" maxlength="5000"
-                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.sendMessage()}"
-                    oninput="App.onTyping()"></textarea>
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();App.sendMessage()}"
+                    oninput="App.onTyping()"
+                    oncompositionend="App.onCompositionEnd()"></textarea>
                 <button class="chat-send-btn" onclick="App.sendMessage()">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="white" stroke-width="2">
                         <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -742,10 +818,12 @@ const App = {
         // 后台加载消息（不阻塞UI）
         await this.loadMessages();
 
-        // 绑定滚动监听
+        // 绑定滚动监听（先移除旧的，避免累积）
         const msgArea = document.getElementById('messages-area');
         if (msgArea) {
-            msgArea.addEventListener('scroll', () => this.updateScrollButton());
+            if (this._scrollHandler) msgArea.removeEventListener('scroll', this._scrollHandler);
+            this._scrollHandler = () => this.updateScrollButton();
+            msgArea.addEventListener('scroll', this._scrollHandler, { passive: true });
         }
 
         // 自动聚焦输入框（移动端不自动聚焦，避免键盘遮挡聊天内容）
@@ -755,18 +833,60 @@ const App = {
         }, 100);
     },
 
-    // iOS键盘适配：监听visualViewport变化，调整消息区域滚动
+    // iOS键盘适配：监听visualViewport变化，调整消息区域滚动和输入区位置
     setupMobileKeyboardHandler() {
         if (!window.visualViewport) return;
+        // 先清理旧的监听器
+        if (this._keyboardHandler) {
+            window.visualViewport.removeEventListener('resize', this._keyboardHandler);
+        }
         const initialHeight = window.innerHeight;
-        window.visualViewport.addEventListener('resize', () => {
+        this._keyboardHandler = () => {
             const msgArea = document.getElementById('messages-area');
-            if (!msgArea || !this.currentChatId) return;
-            // 键盘弹起时滚动到底部
-            if (window.visualViewport.height < initialHeight * 0.8) {
-                requestAnimationFrame(() => this.scrollToBottom(true));
+            const inputArea = document.querySelector('.chat-input-area');
+            if (!this.currentChatId) return;
+
+            const heightDiff = initialHeight - window.visualViewport.height;
+
+            // 键盘弹起时（viewport变矮）
+            if (heightDiff > 150) {
+                // 滚动消息到底部
+                if (msgArea) {
+                    requestAnimationFrame(() => this.scrollToBottom(true));
+                }
+                // iOS: 将输入区域上移，防止被键盘遮挡
+                if (inputArea) {
+                    inputArea.style.transform = `translateY(-${heightDiff}px)`;
+                    inputArea.style.transition = 'transform 0.2s ease';
+                }
+            } else {
+                // 键盘收起时恢复
+                if (inputArea) {
+                    inputArea.style.transform = 'translateY(0)';
+                    inputArea.style.transition = 'transform 0.25s ease';
+                }
             }
-        });
+        };
+        window.visualViewport.addEventListener('resize', this._keyboardHandler);
+
+        // 也监听scroll（iOS滚动时viewport会变化）
+        window.visualViewport.addEventListener('scroll', this._keyboardHandler);
+    },
+
+    // 清理资源（切换视图时调用）
+    cleanupChatResources() {
+        this.hideTyping();
+        this._sendLock = false;
+        // 清理typing timer
+        if (this.typingTimer) {
+            clearTimeout(this.typingTimer);
+            this.typingTimer = null;
+        }
+        // 清理发送锁超时
+        if (this._sendLockTimeout) {
+            clearTimeout(this._sendLockTimeout);
+            this._sendLockTimeout = null;
+        }
     },
 
     async loadMessages() {
@@ -830,24 +950,44 @@ const App = {
         const listPanel = document.querySelector('.list-panel');
         if (listPanel) listPanel.classList.remove('hidden');
         if (detail) detail.classList.add('hidden');
-        // 重置聊天状态，下次打开switchView时不会残留
+        // 重置聊天状态
         this.currentChatId = null;
         this.currentChatType = null;
         this.currentChatName = '';
-        this.hideTyping();
+        this.cleanupChatResources();
     },
 
     // ========== 发送消息 ==========
 
     sendMessage() {
+        // 检查是否有打开的聊天
+        if (!this.currentChatId || !this.currentChatType) {
+            this.toast(t('error.noChatSelected') || '请先选择一个聊天', 'error');
+            return;
+        }
+        // 检查发送锁（防止重复发送）
         if (this._sendLock) return;
+        // 检查Socket连接状态
+        if (!this.socket || !this.socket.connected) {
+            this.toast(t('error.disconnected') || '连接已断开，正在重连...', 'error');
+            // 尝试重连
+            if (this.socket) this.socket.connect();
+            return;
+        }
+
         const input = document.getElementById('chat-input');
         const sendBtn = document.querySelector('.chat-send-btn');
+        if (!input) return;
         const content = input.value.trim();
         if (!content) return;
 
         this._sendLock = true;
-        setTimeout(() => this._sendLock = false, 300);
+        if (sendBtn) sendBtn.disabled = true;
+        // 锁在消息确认回调中释放（3s兜底超时，给移动端慢网络更多时间）
+        this._sendLockTimeout = setTimeout(() => {
+            this._sendLock = false;
+            if (sendBtn) sendBtn.disabled = false;
+        }, 3000);
 
         const msgData = {
             to: this.currentChatId,
@@ -881,11 +1021,30 @@ const App = {
         this.scrollToBottom();
         this.hideTyping();
 
+        // 更新发送按钮禁用状态
+        setTimeout(() => {
+            if (sendBtn) sendBtn.disabled = !input.value.trim();
+        }, 50);
+
         // 发送停止输入指示
-        this.socket.emit('stop-typing', { to: this.currentChatId, type: this.currentChatType });
+        if (this.socket && this.socket.connected) {
+            this.socket.emit('stop-typing', { to: this.currentChatId, type: this.currentChatType });
+        }
     },
 
     async sendImage() {
+        // 检查是否有打开的聊天
+        if (!this.currentChatId || !this.currentChatType) {
+            this.toast(t('error.noChatSelected') || '请先选择一个聊天', 'error');
+            return;
+        }
+        // 检查Socket连接状态
+        if (!this.socket || !this.socket.connected) {
+            this.toast(t('error.disconnected') || '连接已断开，正在重连...', 'error');
+            if (this.socket) this.socket.connect();
+            return;
+        }
+
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = 'image/*';
@@ -964,15 +1123,15 @@ const App = {
             const color = msg.fromAvatarColor || '#764ba2';
             const text = msg.fromAvatarText || '?';
             const url = msg.fromAvatarUrl;
-            avatarHTML = url ? `<img src="${url}" alt="">` : text;
+            avatarHTML = url ? `<img src="${this.escapeAttr(url)}" alt="">` : this.escapeHtml(text);
             const bgColor = url ? 'transparent' : color;
-            var avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
+            const avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
         }
 
         // 内容
         let contentHTML;
         if (msg.messageType === 'image') {
-            contentHTML = `<img class="msg-image" src="${msg.content}" onclick="App.previewImage('${msg.content}')">`;
+            contentHTML = `<img class="msg-image" src="${this.escapeAttr(msg.content)}" ${this._ao('previewImage', msg.content)}>`;
         } else {
             contentHTML = this.escapeHtml(msg.content);
         }
@@ -1009,20 +1168,32 @@ const App = {
     // ========== Typing指示 ==========
 
     onTyping() {
-        if (!this.socket) return;
+        if (!this.socket || !this.socket.connected) return;
+        if (!this.currentChatId) return;
         this.socket.emit('typing', { to: this.currentChatId, type: this.currentChatType });
 
         // 更新发送按钮禁用状态
         const input = document.getElementById('chat-input');
         const sendBtn = document.querySelector('.chat-send-btn');
-        if (sendBtn) {
+        if (sendBtn && input) {
             sendBtn.disabled = !input.value.trim();
         }
 
         clearTimeout(this.typingTimer);
         this.typingTimer = setTimeout(() => {
-            this.socket.emit('stop-typing', { to: this.currentChatId, type: this.currentChatType });
+            if (this.socket && this.socket.connected) {
+                this.socket.emit('stop-typing', { to: this.currentChatId, type: this.currentChatType });
+            }
         }, 3000);
+    },
+
+    // IME组合输入结束（中文/日文/韩文输入法），更新按钮状态
+    onCompositionEnd() {
+        const input = document.getElementById('chat-input');
+        const sendBtn = document.querySelector('.chat-send-btn');
+        if (sendBtn && input) {
+            sendBtn.disabled = !input.value.trim();
+        }
     },
 
     showTyping(name) {
@@ -1091,14 +1262,16 @@ const App = {
                 </div>`
                 : filtered.map(f => {
                     const isOnline = this.onlineUsers.includes(f.id);
-                    const avatarHTML = f.avatarUrl ? `<img src="${f.avatarUrl}" alt="">` : f.avatarText;
+                    const avatarHTML = f.avatarUrl ? `<img src="${this.escapeAttr(f.avatarUrl)}" alt="">` : this.escapeHtml(f.avatarText);
                     const bgColor = f.avatarUrl ? 'transparent' : f.avatarColor;
+                    const escId = this.escapeAttr(f.id);
+                    const openChatAttr = this._ao('openChat', 'private', f.id, f.nickname, f.avatarColor, f.avatarText, f.avatarUrl || '');
                     return `
                         <div class="contact-item">
-                            <div class="contact-avatar" style="background:${bgColor}" onclick="event.stopPropagation();App.viewProfile('${f.id}')" title="查看主页">${avatarHTML}</div>
-                            <div class="contact-info" onclick="App.openChat('private','${f.id}','${f.nickname}','${f.avatarColor}','${f.avatarText}','${f.avatarUrl || ''}')">
-                                <div class="contact-name"><span onclick="event.stopPropagation();App.viewProfile('${f.id}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--primary-light);text-underline-offset:2px;">${f.nickname}</span></div>
-                                <div class="contact-bio">${f.bio || ''}</div>
+                            <div class="contact-avatar" style="background:${bgColor}" onclick="event.stopPropagation();App.viewProfile('${escId}')" title="查看主页">${avatarHTML}</div>
+                            <div class="contact-info" ${openChatAttr}>
+                                <div class="contact-name"><span onclick="event.stopPropagation();App.viewProfile('${escId}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--primary-light);text-underline-offset:2px;">${this.escapeHtml(f.nickname)}</span></div>
+                                <div class="contact-bio">${this.escapeHtml(f.bio || '')}</div>
                             </div>
                             ${isOnline ? '<div class="contact-online-dot"></div>' : ''}
                         </div>
@@ -1124,16 +1297,17 @@ const App = {
                     <p>${t('moments.emptyHint') || '发布你的第一条动态吧'}</p>
                 </div>`
                 : moments.map(m => {
-                    const avatarHTML = m.avatarUrl ? `<img src="${m.avatarUrl}" alt="">` : m.avatarText;
+                    const avatarHTML = m.avatarUrl ? `<img src="${this.escapeAttr(m.avatarUrl)}" alt="">` : this.escapeHtml(m.avatarText);
                     const bgColor = m.avatarUrl ? 'transparent' : m.avatarColor;
                     const liked = m.likes.includes(this.currentUser.id);
                     const likeCount = m.likes.length;
+                    const escUserId = this.escapeAttr(m.userId);
 
                     let imagesHTML = '';
                     if (m.images && m.images.length > 0) {
                         const cls = m.images.length === 1 ? 'moment-images single' : 'moment-images';
                         imagesHTML = `<div class="${cls}">${m.images.map(img =>
-                            `<img src="${img}" onclick="App.previewImage('${img}')" alt="">`
+                            `<img src="${this.escapeAttr(img)}" ${this._ao('previewImage', img)} alt="">`
                         ).join('')}</div>`;
                     }
 
@@ -1141,7 +1315,7 @@ const App = {
                     if (m.comments && m.comments.length > 0) {
                         commentsHTML = `<div class="moment-comments">${m.comments.map(c => `
                             <div class="moment-comment">
-                                <span class="moment-comment-name" style="cursor:pointer;" onclick="App.viewProfile('${c.userId}')">${c.nickname}：</span>
+                                <span class="moment-comment-name" style="cursor:pointer;" onclick="App.viewProfile('${this.escapeAttr(c.userId)}')">${this.escapeHtml(c.nickname)}：</span>
                                 <span class="moment-comment-text">${this.escapeHtml(c.content)}</span>
                             </div>
                         `).join('')}</div>`;
@@ -1149,15 +1323,15 @@ const App = {
 
                     const likesText = likeCount > 0 ? `<span class="moment-likes-text">${likeCount}${t('moments.likesCount')}</span>` : '';
                     const deleteBtn = m.isOwn || this.currentUser?.role === 'admin'
-                        ? `<button class="moment-delete-btn" onclick="App.deleteMoment('${m.id}')">${t('moments.delete')}</button>`
+                        ? `<button class="moment-delete-btn" onclick="App.deleteMoment('${this.escapeAttr(m.id)}')">${t('moments.delete')}</button>`
                         : '';
 
                     return `
                         <div class="moment-card">
                             <div class="moment-header">
-                                <div class="moment-avatar" style="background:${bgColor};cursor:pointer;" onclick="App.viewProfile('${m.userId}')">${avatarHTML}</div>
+                                <div class="moment-avatar" style="background:${bgColor};cursor:pointer;" onclick="App.viewProfile('${escUserId}')">${avatarHTML}</div>
                                 <div>
-                                    <div class="moment-name" style="cursor:pointer;" onclick="App.viewProfile('${m.userId}')">${m.nickname}</div>
+                                    <div class="moment-name" style="cursor:pointer;" onclick="App.viewProfile('${escUserId}')">${this.escapeHtml(m.nickname)}</div>
                                     <div class="moment-time">${this.formatTime(m.createdAt)}</div>
                                 </div>
                                 ${deleteBtn}
@@ -1165,11 +1339,11 @@ const App = {
                             <div class="moment-content">${this.escapeHtml(m.content)}</div>
                             ${imagesHTML}
                             <div class="moment-actions">
-                                <button class="moment-action-btn ${liked ? 'liked' : ''}" onclick="App.likeMoment('${m.id}')">
+                                <button class="moment-action-btn ${liked ? 'liked' : ''}" onclick="App.likeMoment('${this.escapeAttr(m.id)}')">
                                     ${liked ? '❤️' : '🤍'} ${t('moments.like')}
                                 </button>
                                 ${likesText}
-                                <button class="moment-action-btn" onclick="App.commentMoment('${m.id}')">💬 ${t('moments.comment')}</button>
+                                <button class="moment-action-btn" onclick="App.commentMoment('${this.escapeAttr(m.id)}')">💬 ${t('moments.comment')}</button>
                             </div>
                             ${commentsHTML}
                         </div>
@@ -1362,16 +1536,18 @@ const App = {
             if (friends.length > 0) {
                 html += `<div class="discover-section-title" style="margin-top:20px;">👥 ${t('discover.myFriends') || '我的好友'} (${friends.length})</div>`;
                 friends.forEach(u => {
-                    const avatarHTML = u.avatarUrl ? `<img src="${u.avatarUrl}" alt="">` : u.avatarText;
+                    const avatarHTML = u.avatarUrl ? `<img src="${this.escapeAttr(u.avatarUrl)}" alt="">` : this.escapeHtml(u.avatarText);
                     const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
+                    const escId = this.escapeAttr(u.id);
+                    const openChatAttr = this._ao('openChat', 'private', u.id, u.nickname, u.avatarColor, u.avatarText, u.avatarUrl || '');
                     html += `
                         <div class="discover-user-card">
-                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${avatarHTML}</div>
-                            <div class="discover-user-info" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">
-                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${u.nickname}</div>
-                                <div class="discover-user-bio">${u.bio || ''}</div>
+                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${avatarHTML}</div>
+                            <div class="discover-user-info" ${openChatAttr}>
+                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${this.escapeHtml(u.nickname)}</div>
+                                <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
                             </div>
-                            <button class="btn-secondary btn-sm" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">${t('discover.chat')}</button>
+                            <button class="btn-secondary btn-sm" ${openChatAttr}>${t('discover.chat')}</button>
                         </div>
                     `;
                 });
@@ -1381,16 +1557,17 @@ const App = {
             if (nonFriends.length > 0) {
                 html += `<div class="discover-section-title" style="margin-top:20px;">✨ ${t('discover.recommendUsers') || '推荐用户'}</div>`;
                 nonFriends.forEach(u => {
-                    const avatarHTML = u.avatarUrl ? `<img src="${u.avatarUrl}" alt="">` : u.avatarText;
+                    const avatarHTML = u.avatarUrl ? `<img src="${this.escapeAttr(u.avatarUrl)}" alt="">` : this.escapeHtml(u.avatarText);
                     const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
+                    const escId = this.escapeAttr(u.id);
                     html += `
                         <div class="discover-user-card">
-                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${avatarHTML}</div>
+                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${avatarHTML}</div>
                             <div class="discover-user-info">
-                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${u.nickname}</div>
-                                <div class="discover-user-bio">${u.bio || ''}</div>
+                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${this.escapeHtml(u.nickname)}</div>
+                                <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
                             </div>
-                            <button class="btn-primary btn-sm" onclick="App.addFriend('${u.id}')">${t('discover.addFriend')}</button>
+                            <button class="btn-primary btn-sm" onclick="App.addFriend('${escId}')">${t('discover.addFriend')}</button>
                         </div>
                     `;
                 });
@@ -1596,7 +1773,7 @@ const App = {
                     let imagesHTML = '';
                     if (rp.images && rp.images.length > 0) {
                         imagesHTML = `<div class="report-admin-images">` + rp.images.map(img => 
-                            `<img src="${img}" onclick="App.previewImage('${img}')" style="max-width:120px;max-height:120px;border-radius:6px;cursor:pointer;object-fit:cover;" alt="">`
+                            `<img src="${this.escapeAttr(img)}" ${this._ao('previewImage', img)} style="max-width:120px;max-height:120px;border-radius:6px;cursor:pointer;object-fit:cover;" alt="">`
                         ).join('') + `</div>`;
                     }
                     return `
@@ -1920,20 +2097,28 @@ const App = {
 
     async updateUnreadBadge() {
         try {
-            const unread = await this.api('/api/messages/unread');
             let total = 0;
-            Object.values(unread.private || {}).forEach(v => total += v);
-            Object.values(unread.group || {}).forEach(v => total += v);
+            // 优先使用聊天列表缓存的未读数（避免额外N+1查询）
+            if (this._chatListCache && Array.isArray(this._chatListCache)) {
+                total = this._chatListCache.reduce((sum, item) => sum + (item.unread || 0), 0);
+            } else {
+                // 缓存不存在时降级使用旧API
+                const unread = await this.api('/api/messages/unread');
+                Object.values(unread.private || {}).forEach(v => total += v);
+                Object.values(unread.group || {}).forEach(v => total += v);
+            }
 
             const badge = document.getElementById('msg-badge');
             if (total > 0) {
-                badge.textContent = total;
+                badge.textContent = total > 99 ? '99+' : total;
                 badge.classList.remove('hidden');
             } else {
                 badge.classList.add('hidden');
             }
             this._updateTitleBadge(total);
-        } catch {}
+        } catch {
+            // 静默失败
+        }
     },
 
     _updateTitleBadge(count) {
@@ -2140,7 +2325,7 @@ const App = {
                         ${user.moments.map(m => {
                             let imgsHTML = '';
                             if (m.images && m.images.length > 0) {
-                                imgsHTML = `<div class="moment-images">${m.images.map(img => `<img src="${img}" onclick="App.previewImage('${img}')" alt="">`).join('')}</div>`;
+                                imgsHTML = `<div class="moment-images">${m.images.map(img => `<img src="${this.escapeAttr(img)}" ${this._ao('previewImage', img)} alt="">`).join('')}</div>`;
                             }
                             return `
                                 <div class="moment-card">
@@ -2235,11 +2420,11 @@ const App = {
                     <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
                         ${user.id !== this.currentUser?.id ?
                             iBlockedThem ?
-                                `<button class="btn-secondary btn-sm" onclick="App.unblockUser('${user.id}','${user.nickname}')" style="background:#43e97b;color:#fff;">✅ 取消拉黑</button>`
+                                `<button class="btn-secondary btn-sm" onclick="App.unblockUser('${this.escapeAttr(user.id)}','${this.escapeAttr(user.nickname)}')" style="background:#43e97b;color:#fff;">✅ 取消拉黑</button>`
                                 :
-                                `<button class="btn-primary btn-sm" onclick="App.openChat('private','${user.id}','${user.nickname}','${user.avatarColor}','${user.avatarText}','${user.avatarUrl || ''}')">💬 私信</button>
-                                 <button class="btn-danger btn-sm" onclick="App.blockUser('${user.id}','${user.nickname}')" style="background:#ff4757;color:#fff;">🚫 拉黑</button>
-                                 <button class="btn-warning btn-sm report-profile-btn" onclick="App.showReportModal('${user.id}','${user.nickname}')" style="background:#ff9f43;color:#fff;">⚠️ ${t('report.title') || '举报'}</button>`
+                                `<button class="btn-primary btn-sm" ${this._ao('openChat', 'private', user.id, user.nickname, user.avatarColor, user.avatarText, user.avatarUrl || '')}>💬 私信</button>
+                                 <button class="btn-danger btn-sm" onclick="App.blockUser('${this.escapeAttr(user.id)}','${this.escapeAttr(user.nickname)}')" style="background:#ff4757;color:#fff;">🚫 拉黑</button>
+                                 <button class="btn-warning btn-sm report-profile-btn" onclick="App.showReportModal('${this.escapeAttr(user.id)}','${this.escapeAttr(user.nickname)}')" style="background:#ff9f43;color:#fff;">⚠️ ${t('report.title') || '举报'}</button>`
                             : ''}
                         ${isSelf && (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') ?
                             `<button class="btn-primary btn-sm" onclick="App.switchView('admin')" style="background:linear-gradient(135deg,#f5576c,#f093fb);color:#fff;">🛡️ 管理后台</button>`
@@ -2629,6 +2814,19 @@ const App = {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    },
+
+    // 安全转义用于 HTML 属性内的 JS 字符串值（防止 XSS）
+    escapeAttr(val) {
+        if (val == null) return '';
+        return String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    },
+
+    // 批量生成安全的 onclick 属性
+    _ao(action, ...args) {
+        // action = 'openChat' | 'viewProfile' | 'previewImage' | 'showReportModal' | 'showGroupMembers'
+        const escaped = args.map(a => `'${this.escapeAttr(a)}'`);
+        return `onclick="App.${action}(${escaped.join(',')})"`;
     }
 };
 
