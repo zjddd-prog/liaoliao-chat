@@ -1187,20 +1187,20 @@ const App = {
         const time = this.formatTime(msg.timestamp);
 
         // 头像
-        let avatarHTML;
+        let avatarEl;
         if (isSelf) {
-            avatarHTML = this.currentUser?.avatarUrl
+            const avatarHTML = this.currentUser?.avatarUrl
                 ? `<img src="${this.currentUser.avatarUrl}" alt="">`
-                : this.currentUser?.avatarText || '?';
+                : (this.currentUser?.avatarText || '?');
             const bgColor = this.currentUser?.avatarUrl ? 'transparent' : this.currentUser?.avatarColor;
-            const avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
+            avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
         } else {
             const color = msg.fromAvatarColor || '#764ba2';
             const text = msg.fromAvatarText || '?';
             const url = msg.fromAvatarUrl;
-            avatarHTML = url ? `<img src="${this.escapeAttr(url)}" alt="">` : this.escapeHtml(text);
+            const avatarHTML = url ? `<img src="${this.escapeAttr(url)}" alt="">` : this.escapeHtml(text);
             const bgColor = url ? 'transparent' : color;
-            const avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
+            avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
         }
 
         // 内容
