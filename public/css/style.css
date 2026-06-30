@@ -1506,84 +1506,161 @@ input, textarea { font-family: inherit; }
 
 /* ========== 聊天气泡风格 ========== */
 
-/* 0 — 经典白色（免费） */
-.msg-bubble.bubble-default {
-    background: linear-gradient(135deg, #f0f0f0, #fafafa);
-    color: var(--text); border: 1px solid var(--border);
+/* 0 — 晴空万里（免费） */
+.msg-bubble.bubble-sky {
+    background: linear-gradient(135deg, #E3F2FD, #BBDEFB);
+    color: #1565C0; border: 1px solid #90CAF9;
 }
-.msg-row.self .msg-bubble.bubble-default {
-    background: linear-gradient(135deg, var(--primary), #764ba2);
+.msg-row.self .msg-bubble.bubble-sky {
+    background: linear-gradient(135deg, #42A5F5, #1E88E5);
     color: #fff; border: none;
 }
 
-/* 1 — 薄荷清风 (30积分) */
-.msg-bubble.bubble-mint { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); color: #2e7d32; border: 1px solid #a5d6a7; }
-.msg-row.self .msg-bubble.bubble-mint { background: linear-gradient(135deg, #43a047, #66bb6a); color: #fff; border: none; }
-
-/* 2 — 星空紫韵 (60积分) */
-.msg-bubble.bubble-purple { background: linear-gradient(135deg, #ede7f6, #d1c4e9); color: #4a148c; border: 1px solid #b39ddb; }
-.msg-row.self .msg-bubble.bubble-purple { background: linear-gradient(135deg, #7c4dff, #b388ff); color: #fff; border: none; }
-
-/* 3 — 樱花轻语 (120积分) */
-.msg-bubble.bubble-sakura {
-    background: linear-gradient(135deg, #fce4ec, #f8bbd0);
-    color: #880e4f; border: 1px solid #f48fb1;
-    box-shadow: 0 2px 8px rgba(244,143,177,0.2);
+/* 1 — 云霄巡航 (30积分) */
+.msg-bubble.bubble-cloud {
+    background: linear-gradient(135deg, #B3E5FC, #E1F5FE);
+    color: #0277BD; border: 1px solid #81D4FA;
+    position: relative; overflow: hidden;
 }
-.msg-row.self .msg-bubble.bubble-sakura {
-    background: linear-gradient(135deg, #ec407a, #f06292);
+.msg-bubble.bubble-cloud::before {
+    content: '☁️'; position: absolute; top: -6px; left: 6px;
+    font-size: 14px; opacity: 0.4; transform: rotate(-10deg);
+}
+.msg-bubble.bubble-cloud::after {
+    content: '✈️'; position: absolute; bottom: -8px; right: 8px;
+    font-size: 12px; opacity: 0.35; transform: rotate(15deg);
+}
+.msg-row.self .msg-bubble.bubble-cloud {
+    background: linear-gradient(135deg, #0288D1, #29B6F6);
     color: #fff; border: none;
 }
+.msg-row.self .msg-bubble.bubble-cloud::before,
+.msg-row.self .msg-bubble.bubble-cloud::after { opacity: 0.5; }
 
-/* 4 — 皇冠王者 👑 (180积分) - 最高级气泡 */
-.msg-bubble.bubble-crown {
-    background: linear-gradient(135deg, #fff8e1, #ffecb3, #ffe082);
-    color: #e65100;
-    border: 2px solid #ffb300;
-    box-shadow: 0 0 12px rgba(255,179,0,0.3), 0 2px 8px rgba(0,0,0,0.1);
+/* 2 — 落日飞行 (60积分) */
+.msg-bubble.bubble-sunset {
+    background: linear-gradient(135deg, #FFE0B2, #FFCCBC, #FFECB3);
+    color: #BF360C; border: 1px solid #FFAB91;
+    position: relative;
+}
+.msg-bubble.bubble-sunset::before {
+    content: '🌅'; position: absolute; top: -10px; right: 8px;
+    font-size: 16px; opacity: 0.5; filter: drop-shadow(0 0 2px rgba(255,152,0,0.4));
+}
+.msg-row.self .msg-bubble.bubble-sunset {
+    background: linear-gradient(135deg, #FF6E40, #FF8F00);
+    color: #fff; border: none;
+}
+.msg-row.self .msg-bubble.bubble-sunset::before { opacity: 0.7; }
+
+/* 3 — 星辰航线 (120积分) */
+.msg-bubble.bubble-stars {
+    background: linear-gradient(135deg, #1A237E, #283593, #311B92);
+    color: #E8EAF6; border: 1px solid #5C6BC0;
+    box-shadow: 0 0 10px rgba(92,107,192,0.3), inset 0 0 20px rgba(255,255,255,0.03);
+    position: relative; overflow: hidden;
+}
+.msg-bubble.bubble-stars::before {
+    content: '';
+    position: absolute;
+    top: 2px; left: 5px; right: 5px;
+    height: 1px;
+    background: repeating-linear-gradient(
+        90deg,
+        transparent, transparent 12px,
+        rgba(255,255,255,0.6) 12px, rgba(255,255,255,0.6) 13px,
+        transparent 13px, transparent 18px,
+        rgba(255,255,255,0.35) 18px, rgba(255,255,255,0.35) 19px,
+        transparent 19px, transparent 25px,
+        rgba(255,255,255,0.8) 25px, rgba(255,255,255,0.8) 26px
+    );
+    pointer-events: none;
+}
+.msg-bubble.bubble-stars::after {
+    content: '✦';
+    position: absolute; top: -6px; right: 10px;
+    font-size: 14px; color: #FFD54F;
+    animation: twinkle 1.5s ease-in-out infinite;
+}
+@keyframes twinkle {
+    0%, 100% { opacity: 0.4; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.3); }
+}
+.msg-row.self .msg-bubble.bubble-stars {
+    background: linear-gradient(135deg, #3949AB, #1E88E5, #7C4DFF);
+    color: #fff; border: none;
+    box-shadow: 0 0 14px rgba(57,73,171,0.5);
+}
+.msg-row.self .msg-bubble.bubble-stars::before { background: repeating-linear-gradient(
+    90deg,
+    transparent, transparent 12px,
+    rgba(255,255,255,0.8) 12px, rgba(255,255,255,0.8) 13px,
+    transparent 13px, transparent 18px,
+    rgba(255,255,255,0.5) 18px, rgba(255,255,255,0.5) 19px,
+    transparent 19px, transparent 25px,
+    rgba(255,255,255,0.9) 25px, rgba(255,255,255,0.9) 26px
+); }
+
+/* 4 — 王牌机长 (180积分) - 最高级气泡 */
+.msg-bubble.bubble-captain {
+    background: linear-gradient(135deg, #FFF8E1, #FFE082, #FFD54F);
+    color: #E65100;
+    border: 2px solid #FFB300;
+    box-shadow: 0 0 18px rgba(255,179,0,0.4), 0 2px 10px rgba(0,0,0,0.12);
     position: relative;
     overflow: visible;
 }
-.msg-bubble.bubble-crown::before {
-    content: '👑';
+.msg-bubble.bubble-captain::before {
+    content: '🎖️';
     position: absolute;
     top: -14px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 20px;
-    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.2));
-    animation: crown-bounce 2s ease-in-out infinite;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+    animation: wing-float 2s ease-in-out infinite;
     z-index: 5;
 }
-.msg-bubble.bubble-crown::after {
+.msg-bubble.bubble-captain::after {
     content: '';
     position: absolute;
     inset: -3px;
-    border-radius: 19px;
-    border: 2px dashed #ffb300;
+    border-radius: 18px;
+    border: 2px dashed #FFB300;
     opacity: 0.5;
     pointer-events: none;
 }
-@keyframes crown-bounce {
-    0%, 100% { transform: translateX(-50%) translateY(0); }
-    50% { transform: translateX(-50%) translateY(-3px); }
+.msg-row.self .msg-bubble.bubble-captain {
+    background: linear-gradient(135deg, #F9A825, #FF8F00, #F57F17);
+    color: #3E2723;
+    border: 2px solid #FF6F00;
+    box-shadow: 0 0 20px rgba(245,124,0,0.45), 0 3px 12px rgba(0,0,0,0.18);
+    font-weight: 600;
 }
-.msg-row.self .msg-bubble.bubble-crown {
-    background: linear-gradient(135deg, #f7971e, #ffd200);
-    color: #4a2800;
-    border: 2px solid #ff8f00;
-    box-shadow: 0 0 14px rgba(255,141,0,0.4), 0 2px 10px rgba(0,0,0,0.15);
-}
-.msg-row.self .msg-bubble.bubble-crown::before {
-    content: '👑';
+.msg-row.self .msg-bubble.bubble-captain::before {
+    content: '🎖️';
     position: absolute;
     top: -14px;
     left: 50%;
     transform: translateX(-50%);
     font-size: 20px;
-    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
-    animation: crown-bounce 2s ease-in-out infinite;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));
+    animation: wing-float 2s ease-in-out infinite;
     z-index: 5;
+}
+
+@keyframes wing-float {
+    0%, 100% { transform: translateX(-50%) translateY(0) rotate(-5deg); }
+    50% { transform: translateX(-50%) translateY(-4px) rotate(5deg); }
+}
+
+/* 王牌机长 — 金色翅膀纹理（收到消息） */
+.msg-bubble.bubble-captain .msg-text {
+    position: relative;
+}
+.msg-bubble.bubble-captain .msg-text::first-letter {
+    font-size: 1.1em;
+    color: #D84315;
 }
 
 /* ========== 气泡商城 ========== */
@@ -1610,7 +1687,7 @@ input, textarea { font-family: inherit; }
 }
 .bubble-crown-badge {
     font-size: 16px; position: absolute; top: -5px; right: -3px;
-    animation: crown-bounce 2s ease-in-out infinite;
+    animation: wing-float 2s ease-in-out infinite;
     filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
 }
 .bubble-info { flex: 1; min-width: 0; }
