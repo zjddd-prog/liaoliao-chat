@@ -1030,6 +1030,9 @@ const App = {
         this.currentChatType = null;
         this.currentChatName = '';
         this.cleanupChatResources();
+        // 刷新聊天列表，消除未读红点
+        this.renderChatList(true);
+        this.updateUnreadBadge();
     },
 
     // ========== 发送消息 ==========
@@ -1186,23 +1189,6 @@ const App = {
         }
         const time = this.formatTime(msg.timestamp);
 
-        // 头像
-        let avatarEl;
-        if (isSelf) {
-            const avatarHTML = this.currentUser?.avatarUrl
-                ? `<img src="${this.currentUser.avatarUrl}" alt="">`
-                : (this.currentUser?.avatarText || '?');
-            const bgColor = this.currentUser?.avatarUrl ? 'transparent' : this.currentUser?.avatarColor;
-            avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
-        } else {
-            const color = msg.fromAvatarColor || '#764ba2';
-            const text = msg.fromAvatarText || '?';
-            const url = msg.fromAvatarUrl;
-            const avatarHTML = url ? `<img src="${this.escapeAttr(url)}" alt="">` : this.escapeHtml(text);
-            const bgColor = url ? 'transparent' : color;
-            avatarEl = `<div class="msg-avatar" style="background:${bgColor}">${avatarHTML}</div>`;
-        }
-
         // 内容
         let contentHTML;
         if (msg.messageType === 'image') {
@@ -1222,13 +1208,11 @@ const App = {
 
         const msgHTML = `
             <div class="msg-row ${side}">
-                ${!isSelf ? avatarEl : ''}
                 <div>
                     ${nameTag}
                     <div class="msg-bubble ${bubbleClass}">${contentHTML}</div>
                     <div class="msg-time">${time}</div>
                 </div>
-                ${isSelf ? avatarEl : ''}
             </div>
         `;
 
