@@ -290,6 +290,40 @@ const App = {
             this.toast(data.message, 'error');
         });
 
+        // 禁言相关事件
+        this.socket.on('muted-error', (data) => {
+            this.toast(data.message, 'error');
+        });
+
+        this.socket.on('muted', (data) => {
+            const until = data.mutedUntil;
+            const now = Date.now();
+            let msg = t('error.muted') || '你已被禁言';
+            if (until && until > now) {
+                const diff = until - now;
+                const days = Math.ceil(diff / 86400000);
+                if (days >= 36500) msg += '（永久）';
+                else msg += `（${days}天）`;
+            }
+            this.toast(msg, 'error');
+            // 禁用输入框
+            const input = document.getElementById('chat-input');
+            if (input) {
+                input.disabled = true;
+                input.placeholder = t('error.muted') || '你已被禁言';
+            }
+        });
+
+        this.socket.on('unmuted', () => {
+            this.toast(t('admin.unmuteSuccess') || '已解除禁言', 'success');
+            // 启用输入框
+            const input = document.getElementById('chat-input');
+            if (input) {
+                input.disabled = false;
+                input.placeholder = t('chat.placeholder') || '输入消息...';
+            }
+        });
+
         this.socket.on('auth-error', (msg) => {
             this.toast(msg, 'error');
         });
@@ -1279,6 +1313,11 @@ const App = {
     // ========== 管理员后台 ==========
 
     renderAdmin() {
+        // 普通管理员看不到"聊天监控"tab
+        const chatTab = document.querySelector('.admin-tab[data-tab="admin-chats"]');
+        if (chatTab) {
+            chatTab.style.display = this.currentUser?.role === 'super_admin' ? '' : 'none';
+        }
         document.querySelectorAll('.admin-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
@@ -1295,7 +1334,14 @@ const App = {
         if (tab === 'admin-users') {
             try {
                 const users = await this.api('/api/admin/users');
-                contentEl.innerHTML = users.map(u => `
+                contentEl.innerHTML = users.map(u => {
+                    const isMuted = u.mutedUntil !== null && u.mutedUntil > Date.now();
+                    const isPermanentMute = u.mutedUntil === 253402300799000;
+                    let muteLabel = '';
+                    if (isMuted) {
+                        muteLabel = isPermanentMute ? '已永久禁言' : '已禁言至 ' + new Date(u.mutedUntil).toLocaleString();
+                    }
+                    return `
                     <div class="admin-user-card">
                         <div class="admin-user-avatar" style="background:${u.avatarColor}">${u.avatarText}</div>
                         <div class="admin-user-info">
@@ -1303,6 +1349,7 @@ const App = {
                             <div class="admin-user-meta">${u.bio || ''}</div>
                             <span class="admin-user-role ${u.role}">${u.role === 'super_admin' ? '👑 ' + (t('admin.superAdmin') || '超级管理员') : u.role === 'admin' ? '⭐ ' + (t('admin.admin') || '管理员') : t('admin.user') || '普通用户'}</span>
                             ${u.banned ? '<span class="admin-user-banned">' + (t('admin.banned') || '已封禁') + '</span>' : ''}
+                            ${isMuted ? '<span class="admin-user-muted">' + muteLabel + '</span>' : ''}
                             <span style="font-size:12px;color:var(--text-light);">${t('sidebar.points')}: ${u.points || 0}</span>
                         </div>
                         <div class="admin-actions">
@@ -1310,11 +1357,14 @@ const App = {
                                 ${this.currentUser?.role === 'super_admin' && u.role !== 'admin' ? `<button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="${t('admin.promote') || '提升为管理员'}">⭐ ${t('admin.setAdmin') || '设为管理员'}</button>` : ''}
                                 <button class="btn-secondary btn-sm" onclick="App.adminBanUser('${u.id}')">${u.banned ? (t('admin.unban') || '解封') : (t('admin.ban') || '封禁')}</button>
                                 <button class="btn-danger btn-sm" onclick="App.adminDeleteUser('${u.id}')">${t('admin.delete') || '注销'}</button>
-                                <button class="btn-secondary btn-sm" onclick="App.adminViewChat('${u.id}')">${t('admin.viewChat') || '查看聊天'}</button>
+                                ${isMuted ?
+                                    `<button class="btn-secondary btn-sm" onclick="App.adminUnmuteUser('${u.id}')">解除禁言</button>` :
+                                    `<button class="btn-warning btn-sm" onclick="App.adminMuteUser('${u.id}')">禁言</button>`
+                                }
                             ` : ''}
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
             } catch (e) {
                 contentEl.innerHTML = `<p style="color:red;">${e.message}</p>`;
             }
@@ -1472,6 +1522,49 @@ const App = {
         try {
             const data = await this.api(`/api/admin/promote/${userId}`, 'POST');
             this.toast(data.message, 'success');
+            this.renderAdminTab('admin-users');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    // 禁言用户 - 显示时长选择弹窗
+    adminMuteUser(userId) {
+        const body = `
+            <div style="display:flex;flex-direction:column;gap:12px;padding:8px 0;">
+                <p style="font-size:14px;color:var(--text);margin-bottom:4px;">${t('admin.muteSelect') || '请选择禁言时长：'}</p>
+                <button class="mute-option-btn" onclick="App.submitMute('${userId}','1day')" style="padding:14px 16px;border:2px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;font-size:15px;width:100%;text-align:center;transition:all 0.2s;">
+                    🕐 ${t('admin.mute1Day') || '1天'}
+                </button>
+                <button class="mute-option-btn" onclick="App.submitMute('${userId}','7days')" style="padding:14px 16px;border:2px solid var(--border);border-radius:12px;background:#fff;cursor:pointer;font-size:15px;width:100%;text-align:center;transition:all 0.2s;">
+                    📅 ${t('admin.mute7Days') || '7天'}
+                </button>
+                <button class="mute-option-btn" onclick="App.submitMute('${userId}','permanent')" style="padding:14px 16px;border:2px solid var(--danger);border-radius:12px;background:#fff5f5;cursor:pointer;font-size:15px;width:100%;text-align:center;color:var(--danger);font-weight:600;transition:all 0.2s;">
+                    🔒 ${t('admin.mutePermanent') || '永久禁言'}
+                </button>
+            </div>
+        `;
+        this.showModal('🔇 ' + (t('admin.muteTitle') || '禁言用户'), body, '');
+    },
+
+    // 提交禁言
+    async submitMute(userId, duration) {
+        try {
+            const data = await this.api(`/api/admin/mute/${userId}`, 'POST', { duration });
+            this.toast(t('admin.muteSuccess') || '禁言成功', 'success');
+            this.closeModal();
+            this.renderAdminTab('admin-users');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    // 解除禁言
+    async adminUnmuteUser(userId) {
+        if (!confirm(t('admin.unmuteConfirm') || '确定要解除该用户的禁言吗？')) return;
+        try {
+            const data = await this.api(`/api/admin/unmute/${userId}`, 'POST');
+            this.toast(t('admin.unmuteSuccess') || '已解除禁言', 'success');
             this.renderAdminTab('admin-users');
         } catch (e) {
             this.toast(e.message, 'error');
