@@ -349,9 +349,10 @@ const I18N = {
         const msg = this.messages[key];
         if (!msg) {
             console.warn(`[i18n] Missing key: ${key}`);
-            return key;
+            // 返回空字符串，让调用方可以使用 `t(key) || 'fallback'` 的兜底写法
+            return '';
         }
-        return msg[this.lang] || msg['zh-CN'] || key;
+        return msg[this.lang] || msg['zh-CN'] || '';
     },
 
     // ========== 切换语言 ==========
