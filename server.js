@@ -42,9 +42,9 @@ if (loadJSON('users.json').length === 0) {
             username: 'system',
             password: bcrypt.hashSync('system', 10),
             nickname: '系统通知',
-            bio: '聊聊官方系统通知',
+            bio: '飞友之家官方系统通知',
             avatarColor: '#667eea',
-            avatarText: '聊',
+            avatarText: '飞',
             role: 'system',
             banned: false,
             createdAt: Date.now() - 86400000 * 365
@@ -56,7 +56,7 @@ if (loadJSON('messages.json').length === 0) saveJSON('messages.json', []);
 if (loadJSON('groups.json').length === 0) {
     saveJSON('groups.json', [{
         id: 'g_public',
-        name: '聊聊大厅',
+        name: '飞友之家大厅',
         description: '所有人都在这里聊天！',
         avatarColor: '#667eea',
         avatarText: '厅',
@@ -1101,6 +1101,38 @@ app.post('/api/admin/promote/:userId', superAdminMiddleware, (req, res) => {
     res.json({ success: true, message: `${user.nickname} 已提升为管理员` });
 });
 
+// ========== Block / Unblock ==========
+
+app.post('/api/block/:userId', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const target = users.find(u => u.id === req.params.userId);
+    if (!target) return res.status(404).json({ error: '用户不存在' });
+    if (target.id === req.user.id) return res.status(400).json({ error: '不能拉黑自己' });
+
+    const user = users.find(u => u.id === req.user.id);
+    if (!user.blockedUsers) user.blockedUsers = [];
+    if (user.blockedUsers.includes(target.id)) return res.json({ success: true, message: '已拉黑该用户' });
+
+    user.blockedUsers.push(target.id);
+    saveJSON('users.json', users);
+    res.json({ success: true, message: `已拉黑 ${target.nickname}` });
+});
+
+app.post('/api/unblock/:userId', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+    if (!user.blockedUsers) user.blockedUsers = [];
+
+    user.blockedUsers = user.blockedUsers.filter(id => id !== req.params.userId);
+    saveJSON('users.json', users);
+    res.json({ success: true, message: '已取消拉黑' });
+});
+
+app.get('/api/blocked', authMiddleware, (req, res) => {
+    const user = req.user;
+    res.json({ blockedUsers: user.blockedUsers || [] });
+});
+
 const onlineUsers = {}; // userId -> socketId
 
 io.on('connection', (socket) => {
@@ -1147,6 +1179,20 @@ io.on('connection', (socket) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
 
+        const users = loadJSON('users.json');
+        const fromUser = users.find(u => u.id === socket.userId);
+        const toUser = users.find(u => u.id === to);
+
+        // Block check: don't deliver if either user blocked the other
+        if (fromUser?.blockedUsers?.includes(to)) {
+            socket.emit('blocked-error', { message: '你已拉黑该用户，无法发送消息' });
+            return;
+        }
+        if (toUser?.blockedUsers?.includes(socket.userId)) {
+            socket.emit('blocked-error', { message: '对方已将你拉黑，无法发送消息' });
+            return;
+        }
+
         const messages = loadJSON('messages.json');
         const msg = {
             id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -1160,9 +1206,6 @@ io.on('connection', (socket) => {
         };
         messages.push(msg);
         saveJSON('messages.json', messages);
-
-        const users = loadJSON('users.json');
-        const fromUser = users.find(u => u.id === socket.userId);
 
         // Send to recipient if online
         const recipientSocketId = onlineUsers[to];
@@ -1260,7 +1303,7 @@ if (!users.find(u => u.role === 'super_admin')) {
         username: 'admin',
         password: bcrypt.hashSync('admin123', 10),
         nickname: '管理员',
-        bio: '聊聊平台管理员',
+        bio: '飞友之家平台管理员',
         avatarColor: '#f5576c',
         avatarText: '管',
         role: 'super_admin',
@@ -1292,7 +1335,7 @@ server.listen(PORT, '0.0.0.0', () => {
             }
         }
     }
-    console.log(`聊聊 ChatSpace server running!`);
+    console.log(`飞友之家 ChatSpace server running!`);
     console.log(`  本机访问: http://localhost:${PORT}`);
     console.log(`  局域网访问: http://${localIP}:${PORT}`);
     console.log(`  管理员账号: admin / admin123`);
