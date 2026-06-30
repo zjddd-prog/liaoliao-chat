@@ -141,14 +141,14 @@ const App = {
     async handleLogin() {
         const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
-        if (!username || !password) return this.toast('请填写用户名和密码', 'error');
+        if (!username || !password) return this.toast(t('toast.fillFields'), 'error');
 
         try {
             const data = await this.api('/api/login', 'POST', { username, password });
             this.token = data.token;
             this.currentUser = data.user;
             localStorage.setItem('chat_token', this.token);
-            this.toast('登录成功！', 'success');
+            this.toast(t('toast.loginSuccess'), 'success');
             this.showMainApp();
         } catch (e) {
             this.toast(e.message, 'error');
@@ -161,14 +161,14 @@ const App = {
         const nickname = document.getElementById('reg-nickname').value.trim();
         const bio = document.getElementById('reg-bio').value.trim();
 
-        if (!username || !password) return this.toast('请填写用户名和密码', 'error');
+        if (!username || !password) return this.toast(t('toast.fillFields'), 'error');
 
         try {
             const data = await this.api('/api/register', 'POST', { username, password, nickname, bio });
             this.token = data.token;
             this.currentUser = data.user;
             localStorage.setItem('chat_token', this.token);
-            this.toast('注册成功，欢迎来到飞友之家！', 'success');
+            this.toast(t('toast.registerSuccess'), 'success');
             this.showMainApp();
         } catch (e) {
             this.toast(e.message, 'error');
@@ -182,7 +182,7 @@ const App = {
         if (this.socket) this.socket.disconnect();
         this.socket = null;
         this.showAuthPage();
-        this.toast('已退出登录', 'info');
+        this.toast(t('toast.loggedOut'), 'info');
     },
 
     // ========== Socket.IO 连接 ==========
@@ -390,7 +390,7 @@ const App = {
 
             const listEl = document.getElementById('chat-list');
             listEl.innerHTML = items.length === 0
-                ? `<div class="empty-state"><p>暂无聊天，去发现页添加好友吧！</p></div>`
+                ? `<div class="empty-state"><p>${t('chat.noChats')}</p></div>`
                 : items.map(item => {
                     const isActive = this.currentChatType === item.type && this.currentChatId === item.id;
                     const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
@@ -406,7 +406,7 @@ const App = {
                             <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${item.id}')" title="查看主页">${avatarHTML}</div>
                             <div class="chat-info" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
                                 <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${item.name}</span> ${memberTag}</div>
-                                <div class="chat-last-msg">${item.lastMsg || '开始聊天吧'}</div>
+                                <div class="chat-last-msg">${item.lastMsg || t('chat.startChat')}</div>
                             </div>
                             <div class="chat-meta" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
                                 <span class="chat-time">${item.time || ''}</span>
@@ -439,9 +439,9 @@ const App = {
                 </div>
                 <div style="cursor:pointer;" onclick="App.viewProfile('${id}')">
                     <div class="chat-header-name">${name}</div>
-                    <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? '在线' : '离线') : '群聊'}</div>
+                    <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? t('chat.online') : t('chat.offline')) : t('chat.group')}</div>
                 </div>
-                ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${id}')">成员列表</button>` : ''}
+                ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${id}')">${t('chat.members')}</button>` : ''}
             </div>
         `;
 
@@ -465,7 +465,7 @@ const App = {
                         </svg>
                     </button>
                 </div>
-                <textarea class="chat-input" id="chat-input" placeholder="输入消息..." rows="1"
+                <textarea class="chat-input" id="chat-input" data-i18n-placeholder="chat.input" placeholder="${t('chat.input')}" rows="1"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.sendMessage()}"
                     oninput="App.onTyping()"></textarea>
                 <button class="chat-send-btn" onclick="App.sendMessage()">
@@ -575,7 +575,7 @@ const App = {
             const file = input.files[0];
             if (!file) return;
             if (file.size > 3 * 1024 * 1024) {
-                this.toast('图片不能超过3MB', 'error');
+                this.toast(t('toast.imageTooBig'), 'error');
                 return;
             }
 
@@ -611,7 +611,7 @@ const App = {
                 this.scrollToBottom();
 
             } catch (e) {
-                this.toast('图片发送失败: ' + e.message, 'error');
+                this.toast(t('toast.imageSendFail') + e.message, 'error');
             }
         };
         input.click();
@@ -653,7 +653,7 @@ const App = {
 
         // 群聊中显示发送者名字
         const nameTag = (!isSelf && this.currentChatType === 'group')
-            ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${msg.fromNickname || '未知'}</div>`
+            ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${msg.fromNickname || '?'}</div>`
             : '';
 
         const bubbleClass = isSelf
@@ -706,7 +706,7 @@ const App = {
 
         area.insertAdjacentHTML('beforeend', `
             <div class="typing-indicator">
-                ${name} 正在输入
+                ${name} ${t('chat.typing')}
                 <span class="typing-dot"></span>
                 <span class="typing-dot"></span>
                 <span class="typing-dot"></span>
@@ -756,7 +756,7 @@ const App = {
 
             const listEl = document.getElementById('contacts-list');
             listEl.innerHTML = filtered.length === 0
-                ? `<div class="empty-state"><p>${search ? '未找到好友' : '暂无好友，去发现页添加吧！'}</p></div>`
+                ? `<div class="empty-state"><p>${search ? t('contacts.notFound') : t('contacts.empty')}</p></div>`
                 : filtered.map(f => {
                     const isOnline = this.onlineUsers.includes(f.id);
                     const avatarHTML = f.avatarUrl ? `<img src="${f.avatarUrl}" alt="">` : f.avatarText;
@@ -786,7 +786,7 @@ const App = {
 
             const listEl = document.getElementById('moments-list');
             listEl.innerHTML = moments.length === 0
-                ? `<div class="empty-state"><p>暂无动态，发布第一条吧！</p></div>`
+                ? `<div class="empty-state"><p>${t('moments.empty')}</p></div>`
                 : moments.map(m => {
                     const avatarHTML = m.avatarUrl ? `<img src="${m.avatarUrl}" alt="">` : m.avatarText;
                     const bgColor = m.avatarUrl ? 'transparent' : m.avatarColor;
@@ -811,9 +811,9 @@ const App = {
                         `).join('')}</div>`;
                     }
 
-                    const likesText = likeCount > 0 ? `<span class="moment-likes-text">${likeCount}人点赞</span>` : '';
+                    const likesText = likeCount > 0 ? `<span class="moment-likes-text">${likeCount}${t('moments.likesCount')}</span>` : '';
                     const deleteBtn = m.isOwn || this.currentUser?.role === 'admin'
-                        ? `<button class="moment-delete-btn" onclick="App.deleteMoment('${m.id}')">删除</button>`
+                        ? `<button class="moment-delete-btn" onclick="App.deleteMoment('${m.id}')">${t('moments.delete')}</button>`
                         : '';
 
                     return `
@@ -830,10 +830,10 @@ const App = {
                             ${imagesHTML}
                             <div class="moment-actions">
                                 <button class="moment-action-btn ${liked ? 'liked' : ''}" onclick="App.likeMoment('${m.id}')">
-                                    ${liked ? '❤️' : '🤍'} 点赞
+                                    ${liked ? '❤️' : '🤍'} ${t('moments.like')}
                                 </button>
                                 ${likesText}
-                                <button class="moment-action-btn" onclick="App.commentMoment('${m.id}')">💬 评论</button>
+                                <button class="moment-action-btn" onclick="App.commentMoment('${m.id}')">💬 ${t('moments.comment')}</button>
                             </div>
                             ${commentsHTML}
                         </div>
@@ -849,7 +849,7 @@ const App = {
         let imageUrls = [];
 
         const body = `
-            <textarea class="post-textarea" id="post-text" placeholder="分享你的想法..." maxlength="500"></textarea>
+            <textarea class="post-textarea" id="post-text" placeholder="${t('moments.placeholder')}" maxlength="500"></textarea>
             <div class="post-image-preview" id="post-images"></div>
             <div class="post-tools">
                 <label class="post-tool-btn">
@@ -857,7 +857,7 @@ const App = {
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
                         <circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
                     </svg>
-                    添加图片
+                    ${t('moments.addImage')}
                     <input type="file" accept="image/*" multiple style="display:none" id="post-image-input">
                 </label>
                 <span style="font-size:13px;color:var(--text-light);margin-left:auto;" id="char-count">0/500</span>
@@ -865,11 +865,11 @@ const App = {
         `;
 
         const footer = `
-            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-            <button class="btn-primary" id="confirm-post-btn" style="padding:10px 24px;">发布</button>
+            <button class="btn-secondary" onclick="App.closeModal()">${t('moments.cancel')}</button>
+            <button class="btn-primary" id="confirm-post-btn" style="padding:10px 24px;">${t('moments.submit')}</button>
         `;
 
-        this.showModal('发布动态', body, footer);
+        this.showModal(t('moments.publish'), body, footer);
 
         // 字数统计
         const textarea = document.getElementById('post-text');
@@ -886,7 +886,7 @@ const App = {
                     continue;
                 }
                 if (imageUrls.length >= 9) {
-                    this.toast('最多9张图片', 'error');
+                    this.toast(t('toast.max9Images'), 'error');
                     break;
                 }
                 try {
@@ -896,7 +896,7 @@ const App = {
                     imageUrls.push(data.url);
                     this.renderPostImages(imageUrls);
                 } catch (err) {
-                    this.toast('图片上传失败', 'error');
+                    this.toast(t('toast.imageUploadFail'), 'error');
                 }
             }
             e.target.value = '';
@@ -906,7 +906,7 @@ const App = {
         document.getElementById('confirm-post-btn').addEventListener('click', async () => {
             const content = textarea.value.trim();
             if (!content && imageUrls.length === 0) {
-                this.toast('说点什么吧！', 'error');
+                this.toast(t('moments.empty2') || '说点什么吧！', 'error');
                 return;
             }
 
@@ -918,9 +918,9 @@ const App = {
                 await this.api('/api/moments/post', 'POST', { content, images: imageUrls });
                 this.closeModal();
                 this.renderMoments();
-                this.toast('动态发布成功！', 'success');
+                this.toast(t('toast.momentPostSuccess') || '动态发布成功！', 'success');
             } catch (e) {
-                this.toast('发布失败: ' + e.message, 'error');
+                this.toast(t('toast.momentPostFail') + e.message, 'error');
             }
         });
     },
@@ -957,11 +957,11 @@ const App = {
 
     commentMoment(momentId) {
         const body = `
-            <textarea class="post-textarea" id="comment-text" placeholder="写评论..." maxlength="200" style="min-height:60px;"></textarea>
+            <textarea class="post-textarea" id="comment-text" placeholder="${t('moments.commentPlaceholder')}" maxlength="200" style="min-height:60px;"></textarea>
         `;
         const footer = `
-            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-            <button class="btn-primary" id="confirm-comment-btn" style="padding:10px 24px;">评论</button>
+            <button class="btn-secondary" onclick="App.closeModal()">${t('moments.cancel')}</button>
+            <button class="btn-primary" id="confirm-comment-btn" style="padding:10px 24px;">${t('moments.comment')}</button>
         `;
         this.showModal('写评论', body, footer);
 
@@ -980,7 +980,7 @@ const App = {
     },
 
     async deleteMoment(momentId) {
-        if (!confirm('确定删除这条动态吗？')) return;
+        if (!confirm(t('admin.confirmDeleteMoment') || '确定删除这条动态吗？')) return;
         try {
             await this.api(`/api/moments/${momentId}`, 'DELETE');
             this.renderMoments();
@@ -1004,11 +1004,11 @@ const App = {
             let html = '';
 
             // 群聊推荐
-            html += `<div class="discover-section-title">🔥 热门群聊</div>`;
+            html += `<div class="discover-section-title">🔥 ${t('discover.hotGroups') || '热门群聊'}</div>`;
             try {
                 const groups = await this.api('/api/groups');
                 groups.forEach(g => {
-                    const typeLabel = g.type === 'private' ? '🔒 私密' : '🌐 公开';
+                    const typeLabel = g.type === 'private' ? '🔒 ' + (t('discover.privateGroup') || '私密') : '🌐 ' + (t('discover.publicGroup') || '公开');
                     html += `
                         <div class="discover-user-card" onclick="App.joinGroup('${g.id}')">
                             <div class="discover-user-avatar" style="background:${g.avatarColor}">${g.avatarText}</div>
@@ -1016,7 +1016,7 @@ const App = {
                                 <div class="discover-user-name">${g.name} <span class="group-type-tag group-type-${g.type || 'public'}">${typeLabel}</span></div>
                                 <div class="discover-user-bio">${g.description || '暂无简介'} · ${g.memberCount}人</div>
                             </div>
-                            <button class="btn-primary btn-sm">加入</button>
+                            <button class="btn-primary btn-sm">${t('group.join') || '加入'}</button>
                         </div>
                     `;
                 });
@@ -1024,7 +1024,7 @@ const App = {
 
             // 好友
             if (friends.length > 0) {
-                html += `<div class="discover-section-title" style="margin-top:20px;">👥 我的好友 (${friends.length})</div>`;
+                html += `<div class="discover-section-title" style="margin-top:20px;">👥 ${t('discover.myFriends') || '我的好友'} (${friends.length})</div>`;
                 friends.forEach(u => {
                     const avatarHTML = u.avatarUrl ? `<img src="${u.avatarUrl}" alt="">` : u.avatarText;
                     const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
@@ -1035,7 +1035,7 @@ const App = {
                                 <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${u.nickname}</div>
                                 <div class="discover-user-bio">${u.bio || ''}</div>
                             </div>
-                            <button class="btn-secondary btn-sm" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">聊天</button>
+                            <button class="btn-secondary btn-sm" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">${t('discover.chat')}</button>
                         </div>
                     `;
                 });
@@ -1043,7 +1043,7 @@ const App = {
 
             // 推荐用户
             if (nonFriends.length > 0) {
-                html += `<div class="discover-section-title" style="margin-top:20px;">✨ 推荐用户</div>`;
+                html += `<div class="discover-section-title" style="margin-top:20px;">✨ ${t('discover.recommendUsers') || '推荐用户'}</div>`;
                 nonFriends.forEach(u => {
                     const avatarHTML = u.avatarUrl ? `<img src="${u.avatarUrl}" alt="">` : u.avatarText;
                     const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
@@ -1054,7 +1054,7 @@ const App = {
                                 <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${u.nickname}</div>
                                 <div class="discover-user-bio">${u.bio || ''}</div>
                             </div>
-                            <button class="btn-primary btn-sm" onclick="App.addFriend('${u.id}')">+ 好友</button>
+                            <button class="btn-primary btn-sm" onclick="App.addFriend('${u.id}')">${t('discover.addFriend')}</button>
                         </div>
                     `;
                 });
@@ -1070,7 +1070,7 @@ const App = {
     async addFriend(userId) {
         try {
             await this.api('/api/friends/add', 'POST', { userId });
-            this.toast('好友添加成功！', 'success');
+            this.toast(t('toast.friendAdded'), 'success');
             this.renderDiscover();
             this.renderChatList();
             this.renderContacts();
@@ -1125,16 +1125,16 @@ const App = {
                         <div class="admin-user-info">
                             <div class="admin-user-name">${u.nickname} (${u.username})</div>
                             <div class="admin-user-meta">${u.bio || ''}</div>
-                            <span class="admin-user-role ${u.role}">${u.role === 'super_admin' ? '超级管理员' : u.role === 'admin' ? '管理员' : '普通用户'}</span>
-                            ${u.banned ? '<span class="admin-user-banned">已封禁</span>' : ''}
-                            <span style="font-size:12px;color:var(--text-light);">积分: ${u.points || 0}</span>
+                            <span class="admin-user-role ${u.role}">${u.role === 'super_admin' ? '👑 ' + (t('admin.superAdmin') || '超级管理员') : u.role === 'admin' ? '⭐ ' + (t('admin.admin') || '管理员') : t('admin.user') || '普通用户'}</span>
+                            ${u.banned ? '<span class="admin-user-banned">' + (t('admin.banned') || '已封禁') + '</span>' : ''}
+                            <span style="font-size:12px;color:var(--text-light);">${t('sidebar.points')}: ${u.points || 0}</span>
                         </div>
                         <div class="admin-actions">
                             ${u.role !== 'super_admin' && u.id !== this.currentUser?.id ? `
-                                ${this.currentUser?.role === 'super_admin' && u.role !== 'admin' ? `<button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="提升为管理员">⭐ 设为管理员</button>` : ''}
-                                <button class="btn-secondary btn-sm" onclick="App.adminBanUser('${u.id}')">${u.banned ? '解封' : '封禁'}</button>
-                                <button class="btn-danger btn-sm" onclick="App.adminDeleteUser('${u.id}')">注销</button>
-                                <button class="btn-secondary btn-sm" onclick="App.adminViewChat('${u.id}')">查看聊天</button>
+                                ${this.currentUser?.role === 'super_admin' && u.role !== 'admin' ? `<button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="${t('admin.promote') || '提升为管理员'}">⭐ ${t('admin.setAdmin') || '设为管理员'}</button>` : ''}
+                                <button class="btn-secondary btn-sm" onclick="App.adminBanUser('${u.id}')">${u.banned ? (t('admin.unban') || '解封') : (t('admin.ban') || '封禁')}</button>
+                                <button class="btn-danger btn-sm" onclick="App.adminDeleteUser('${u.id}')">${t('admin.delete') || '注销'}</button>
+                                <button class="btn-secondary btn-sm" onclick="App.adminViewChat('${u.id}')">${t('admin.viewChat') || '查看聊天'}</button>
                             ` : ''}
                         </div>
                     </div>
@@ -1148,7 +1148,7 @@ const App = {
             try {
                 const users = await this.api('/api/admin/users');
                 contentEl.innerHTML = `
-                    <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">选择一个用户查看其聊天记录：</p>
+                    <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">${t('admin.selectUser')}</p>
                     <div class="admin-users-mini">
                         ${users.map(u => `
                             <div class="admin-user-mini-card" onclick="App.adminViewChat('${u.id}')">
@@ -1191,15 +1191,15 @@ const App = {
                 const stats = await this.api('/api/admin/stats');
                 contentEl.innerHTML = `
                     <div class="admin-stats-grid">
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalUsers}</div><div class="admin-stat-label">总用户</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.onlineUsers}</div><div class="admin-stat-label">在线用户</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.bannedUsers}</div><div class="admin-stat-label">封禁用户</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalMessages}</div><div class="admin-stat-label">总消息</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.todayMessages}</div><div class="admin-stat-label">今日消息</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalGroups}</div><div class="admin-stat-label">群聊数</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalMoments}</div><div class="admin-stat-label">动态数</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.todayMoments}</div><div class="admin-stat-label">今日动态</div></div>
-                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalFriendships}</div><div class="admin-stat-label">好友关系</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalUsers}</div><div class="admin-stat-label">${t('admin.totalUsers')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.onlineUsers}</div><div class="admin-stat-label">${t('admin.onlineUsers')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.bannedUsers}</div><div class="admin-stat-label">${t('admin.bannedUsers')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalMessages}</div><div class="admin-stat-label">${t('admin.totalMessages')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.todayMessages}</div><div class="admin-stat-label">${t('admin.todayMessages')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalGroups}</div><div class="admin-stat-label">${t('admin.totalGroups')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalMoments}</div><div class="admin-stat-label">${t('admin.totalMoments')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.todayMoments}</div><div class="admin-stat-label">${t('admin.todayMoments')}</div></div>
+                        <div class="admin-stat-card"><div class="admin-stat-value">${stats.totalFriendships}</div><div class="admin-stat-label">${t('admin.totalFriendships')}</div></div>
                     </div>
                 `;
             } catch (e) {
@@ -1211,7 +1211,7 @@ const App = {
             try {
                 const feedbacks = await this.api('/api/admin/feedbacks');
                 if (feedbacks.length === 0) {
-                    contentEl.innerHTML = '<p style="color:var(--text-light);text-align:center;padding:40px;">暂无反馈</p>';
+                    contentEl.innerHTML = '<p style="color:var(--text-light);text-align:center;padding:40px;">' + t('admin.noFeedbacks') + '</p>';
                     return;
                 }
                 contentEl.innerHTML = '<div class="feedbacks-list">' + feedbacks.map(fb => `
@@ -1222,9 +1222,9 @@ const App = {
                             <span class="feedback-time">${this.formatTime(fb.createdAt)}</span>
                         </div>
                         <div class="feedback-text">${this.escapeHtml(fb.content)}</div>
-                        <span class="feedback-status ${fb.status}">${fb.status === 'pending' ? '待处理' : '已处理'}</span>
+                        <span class="feedback-status ${fb.status}">${fb.status === 'pending' ? t('admin.pending') : t('admin.resolved')}</span>
                         <button class="btn-secondary btn-sm" style="margin-left:8px;" onclick="App.adminResolveFeedback('${fb.id}')">
-                            ${fb.status === 'pending' ? '标记已处理' : '重新打开'}
+                            ${fb.status === 'pending' ? t('admin.markResolved') : t('admin.reopen')}
                         </button>
                     </div>
                 `).join('') + '</div>';
@@ -1263,14 +1263,14 @@ const App = {
             const msgs = await this.api(`/api/admin/messages/${userId}`);
             const contentEl = document.getElementById('admin-content');
             contentEl.innerHTML = `
-                <button class="btn-secondary btn-sm" onclick="App.renderAdminTab('admin-users')" style="margin-bottom:12px;">← 返回用户列表</button>
-                <p style="font-weight:600;margin-bottom:8px;">共 ${msgs.length} 条消息记录</p>
+                <button class="btn-secondary btn-sm" onclick="App.renderAdminTab('admin-users')" style="margin-bottom:12px;">${t('admin.backToList')}</button>
+                <p style="font-weight:600;margin-bottom:8px;">${(t('admin.msgCount') || '共 {count} 条消息记录').replace('{count}', msgs.length)}</p>
                 ${msgs.map(m => `
                     <div class="admin-msg-item">
                         <span class="admin-msg-from">${m.fromNickname}</span>
                         → <span class="admin-msg-to">${m.toNickname}</span>
-                        <span style="color:var(--text-light);font-size:11px;">[${m.type === 'private' ? '私聊' : '群聊'}]</span>
-                        <br>${m.messageType === 'image' ? '<em>[图片]</em>' : this.escapeHtml(m.content)}
+                        <span style="color:var(--text-light);font-size:11px;">[${m.type === 'private' ? t('chat.private') : t('chat.groupType')}]</span>
+                        <br>${m.messageType === 'image' ? '<em>' + t('chat.imageText') + '</em>' : this.escapeHtml(m.content)}
                         <span style="color:var(--text-light);font-size:11px;float:right;">${this.formatTime(m.timestamp)}</span>
                     </div>
                 `).join('')}
@@ -1312,35 +1312,70 @@ const App = {
         }
     },
 
+    showLanguageModal() {
+        const langs = [
+            { code: 'zh-CN', name: '中文', icon: '🇨🇳' },
+            { code: 'en', name: 'English', icon: '🇺🇸' },
+            { code: 'ja', name: '日本語', icon: '🇯🇵' },
+            { code: 'ko', name: '한국어', icon: '🇰🇷' }
+        ];
+        const current = I18N.lang;
+        const body = `
+            <div style="display:flex;flex-direction:column;gap:8px;padding:8px 0;">
+                ${langs.map(l => `
+                    <button class="lang-option ${current === l.code ? 'active' : ''}" onclick="App.changeLanguage('${l.code}')"
+                        style="display:flex;align-items:center;gap:12px;padding:12px 16px;border:2px solid ${current === l.code ? 'var(--primary)' : 'var(--border)'};border-radius:10px;background:${current === l.code ? '#f0f4ff' : '#fff'};cursor:pointer;font-size:15px;width:100%;text-align:left;">
+                        <span style="font-size:24px;">${l.icon}</span>
+                        <span>${l.name}</span>
+                        ${current === l.code ? '<span style="margin-left:auto;color:var(--primary);">✓</span>' : ''}
+                    </button>
+                `).join('')}
+            </div>
+        `;
+        this.showModal('🌐 ' + t('lang.switch'), body, '');
+    },
+
+    changeLanguage(lang) {
+        I18N.setLang(lang);
+        this.closeModal();
+        // 刷新所有视图以应用新语言
+        this.renderAll();
+        if (this.currentView === 'contacts') this.renderContacts();
+        else if (this.currentView === 'moments') this.renderMoments();
+        else if (this.currentView === 'discover') this.renderDiscover();
+        else if (this.currentView === 'admin') this.renderAdmin();
+    },
+
     // ========== 问题反馈 ==========
 
     showFeedbackModal() {
+        const fbPlaceholder = t('feedback.placeholder') || '请详细描述你的问题或建议...';
         const body = `
             <div>
                 <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
-                    遇到问题或有建议？请告诉我们，管理员会尽快处理。
+                    ${t('feedback.desc')}
                 </p>
-                <textarea id="feedback-content" placeholder="请详细描述你的问题或建议..." 
+                <textarea id="feedback-content" placeholder="${fbPlaceholder}" 
                     style="width:100%;min-height:120px;padding:12px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;resize:vertical;font-family:inherit;"
                 ></textarea>
             </div>
         `;
         const footer = `
-            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-            <button class="btn-primary" id="submit-feedback-btn">提交反馈</button>
+            <button class="btn-secondary" onclick="App.closeModal()">${t('feedback.cancel') || '取消'}</button>
+            <button class="btn-primary" id="submit-feedback-btn">${t('feedback.submit') || '提交反馈'}</button>
         `;
-        this.showModal('问题反馈', body, footer);
+        this.showModal(t('feedback.title') || '问题反馈', body, footer);
 
         document.getElementById('submit-feedback-btn').addEventListener('click', async () => {
             const content = document.getElementById('feedback-content').value.trim();
             if (content.length < 2) {
-                this.toast('反馈内容至少2个字符', 'error');
+                this.toast(t('toast.feedbackShort'), 'error');
                 return;
             }
             try {
                 await this.api('/api/feedback', 'POST', { content });
                 this.closeModal();
-                this.toast('反馈已提交，感谢你的意见！', 'success');
+                this.toast(t('toast.feedbackSent'), 'success');
             } catch (e) {
                 this.toast(e.message, 'error');
             }
@@ -1349,7 +1384,7 @@ const App = {
 
     showFeedbackDot() {
         if (this.user && this.user.role === 'admin') {
-            this.toast('收到新的用户反馈', 'info');
+            this.toast(t('toast.newFeedback'), 'info');
         }
     },
 
@@ -1408,7 +1443,7 @@ const App = {
             const btn = document.getElementById(id);
             if (btn) {
                 if (this.currentUser?.lastCheckinDate === today) {
-                    btn.textContent = '已签';
+                    btn.textContent = t('checkin.checked');
                     btn.classList.add('checked');
                 } else {
                     btn.classList.remove('checked');
@@ -1427,7 +1462,7 @@ const App = {
             this.toast(data.message, 'success');
         } catch (e) {
             if (e.message.includes('已经签到') || e.message.includes('签过')) {
-                this.toast('今天已经签过到啦！明天再来吧~', 'info');
+                this.toast(t('checkin.already'), 'info');
                 // Still update button states
                 this.currentUser.lastCheckinDate = new Date().toDateString();
                 this.updatePointsDisplay();
@@ -1445,15 +1480,15 @@ const App = {
             const body = `
                 <div class="bubble-shop">
                     <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
-                        选择你喜欢的气泡样式。管理员免费使用全部气泡。
+                        ${t('bubble.shopDesc')}
                     </p>
                     <div class="bubble-grid">
                         ${bubbles.map(b => {
                             const colors = ['#fafafa', '#e8f5e9', '#ede7f6', '#fce4ec', '#fff8e1'];
                             const iconMap = ['💬', '🌿', '✨', '🌸', '👑'];
-                            const statusHTML = b.equipped ? '<span class="bubble-badge equipped">使用中</span>'
-                                : (b.owned && b.isDay) ? '<span class="bubble-badge day">1天</span>'
-                                : (b.owned && !b.isDay) ? '<span class="bubble-badge owned">已拥有</span>'
+                            const statusHTML = b.equipped ? '<span class="bubble-badge equipped">' + t('bubble.using') + '</span>'
+                                : (b.owned && b.isDay) ? '<span class="bubble-badge day">1' + t('bubble.day') + '</span>'
+                                : (b.owned && !b.isDay) ? '<span class="bubble-badge owned">' + t('bubble.owned') + '</span>'
                                 : '';
                             const dayPrice = Math.max(1, Math.floor(b.price * 0.3));
                             return `
@@ -1467,23 +1502,23 @@ const App = {
                                     <div class="bubble-name">${b.name}</div>
                                     <div class="bubble-desc">${b.desc}</div>
                                     <div class="bubble-price-row">
-                                        <span class="bubble-price ${b.price === 0 ? 'free' : ''}">${b.price === 0 ? '免费' : '永久 🪙' + b.price}</span>
-                                        ${b.price > 0 ? `<span class="bubble-price-day">1天 🪙${dayPrice}</span>` : ''}
+                                        <span class="bubble-price ${b.price === 0 ? 'free' : ''}">${b.price === 0 ? t('bubble.free') : t('bubble.permanent') + ' 🪙' + b.price}</span>
+                                        ${b.price > 0 ? `<span class="bubble-price-day">1${t('bubble.day')} 🪙${dayPrice}</span>` : ''}
                                     </div>
                                     ${statusHTML}
                                 </div>
                                 <div class="bubble-actions">
-                                    ${b.equipped ? '<button class="btn-secondary btn-sm" disabled>当前气泡</button>' :
+                                    ${b.equipped ? '<button class="btn-secondary btn-sm" disabled>' + t('bubble.current') + '</button>' :
                                         b.owned ?
-                                        '<button class="btn-primary btn-sm" onclick="App.equipBubble(' + b.id + ')">装备</button>' :
+                                        '<button class="btn-primary btn-sm" onclick="App.equipBubble(' + b.id + ')">' + t('bubble.equip') + '</button>' :
                                         b.price === 0 ?
-                                        '<button class="btn-primary btn-sm" onclick="App.equipBubble(0)">使用</button>' :
+                                        '<button class="btn-primary btn-sm" onclick="App.equipBubble(0)">' + t('bubble.use') + '</button>' :
                                         b.canAfford ?
                                         `<div style="display:flex;flex-direction:column;gap:4px;">
-                                            <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'day')">1天 🪙${dayPrice}</button>
-                                            <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'permanent')">永久 🪙${b.price}</button>
+                                            <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'day')">${t('bubble.dayBtn')}${dayPrice}</button>
+                                            <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'permanent')">${t('bubble.permBtn')}${b.price}</button>
                                         </div>` :
-                                        '<button class="btn-secondary btn-sm" disabled>积分不足</button>'
+                                        '<button class="btn-secondary btn-sm" disabled>' + t('bubble.noPoints') + '</button>'
                                     }
                                 </div>
                             </div>`;
@@ -1491,7 +1526,7 @@ const App = {
                     </div>
                 </div>
             `;
-            this.showModal('气泡商城 🎨', body, '');
+            this.showModal(t('bubble.shopTitle'), body, '');
         } catch (e) {
             this.toast(e.message, 'error');
         }
@@ -1528,7 +1563,7 @@ const App = {
             this.userBubbleStyle = data.bubbleStyle;
             this.currentUser.bubbleStyle = data.bubbleStyle;
             this.closeModal();
-            this.toast('气泡已装备！', 'success');
+            this.toast(t('toast.bubbleEquipped'), 'success');
         } catch (e) {
             this.toast(e.message, 'error');
         }
@@ -1559,7 +1594,7 @@ const App = {
             let momentsHTML = '';
             if (user.moments && user.moments.length > 0) {
                 momentsHTML = `
-                    <div class="profile-section-title">📝 近期动态</div>
+                    <div class="profile-section-title">${t('profile.recentMoments')}</div>
                     <div class="profile-moments">
                         ${user.moments.map(m => {
                             let imgsHTML = '';
@@ -1577,11 +1612,11 @@ const App = {
                     </div>
                 `;
             } else {
-                momentsHTML = `<div class="profile-section-title">📝 近期动态</div><p style="color:var(--text-light);font-size:14px;text-align:center;padding:20px;">暂无动态</p>`;
+                momentsHTML = `<div class="profile-section-title">${t('profile.recentMoments')}</div><p style="color:var(--text-light);font-size:14px;text-align:center;padding:20px;">${t('profile.noMoments')}</p>`;
             }
 
             const roleBadge = user.role === 'super_admin' ? 'super_admin' : user.role === 'admin' ? 'admin' : 'user';
-            const roleLabels = { super_admin: '👑 超级管理员', admin: '⭐ 管理员', user: '' };
+            const roleLabels = { super_admin: '👑 ' + (t('admin.superAdmin') || '超级管理员'), admin: '⭐ ' + (t('admin.admin') || '管理员'), user: '' };
 
             const contentEl = document.getElementById('profile-content');
             contentEl.innerHTML = `
@@ -1589,17 +1624,17 @@ const App = {
                     <div class="profile-big-avatar" style="background:${bgColor}">${avatarHTML}</div>
                     ${isSelf ? `<div class="avatar-upload-area">
                         <label class="avatar-upload-btn">
-                            📷 更换头像
+                            ${t('profile.changeAvatar')}
                             <input type="file" accept="image/*" id="avatar-file-input" style="display:none;" onchange="App.uploadAvatar()">
                         </label>
                         <span class="avatar-upload-status" id="avatar-upload-status"></span>
                     </div>` : ''}
                     <div class="profile-name">${user.nickname}</div>
                     ${user.role !== 'user' ? `<div class="profile-role-badge ${roleBadge}">${roleLabels[roleBadge]}</div>` : ''}
-                    <div class="profile-bio">${user.bio || '这个人很懒，什么都没写...'}</div>
+                    <div class="profile-bio">${user.bio || t('profile.lazy')}</div>
                     <div class="profile-stats">
                         <span>@${user.username}</span>
-                        <span>加入于 ${new Date(user.createdAt).toLocaleDateString()}</span>
+                        <span>${t('profile.joined')} ${new Date(user.createdAt).toLocaleDateString()}</span>
                     </div>
                     <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
                         ${user.id !== this.currentUser?.id ?
@@ -1659,18 +1694,18 @@ const App = {
         const file = fileInput.files[0];
         if (!file) return;
         if (file.size > 5 * 1024 * 1024) {
-            this.toast('图片不能超过5MB', 'error');
+            this.toast(t('toast.avatarTooBig'), 'error');
             return;
         }
         const statusEl = document.getElementById('avatar-upload-status');
-        statusEl.textContent = '上传中...';
+        statusEl.textContent = t('toast.avatarUploading');
         const formData = new FormData();
         formData.append('avatar', file);
         this.apiUpload('/api/avatar', formData).then(data => {
             this.currentUser.avatarUrl = data.avatarUrl;
             this.updateNavAvatar();
-            this.toast('头像已更新！', 'success');
-            statusEl.textContent = '上传成功！';
+            this.toast(t('toast.avatarUpdated'), 'success');
+            statusEl.textContent = t('toast.avatarSuccess');
             // Reload profile
             this.viewProfile(this.currentUser.id, true);
         }).catch(e => {
@@ -1698,27 +1733,27 @@ const App = {
             const isAdmin = this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin';
 
             let html = '<div style="text-align:center;padding:20px;">';
-            html += '<p style="font-size:14px;color:var(--text-light);margin-bottom:20px;">如果觉得飞友之家不错，欢迎请开发者喝杯咖啡 ☕</p>';
+            html += '<p style="font-size:14px;color:var(--text-light);margin-bottom:20px;">' + t('donate.intro') + '</p>';
 
             if (donation.wechat) {
                 html += `<div class="donation-qr-section">
-                    <div class="donation-qr-label">💚 微信支付</div>
-                    <img src="${donation.wechat}" class="donation-qr-img" alt="微信收款码">
+                    <div class="donation-qr-label">${t('payment.wechat') || '💚 微信支付'}</div>
+                    <img src="${donation.wechat}" class="donation-qr-img" alt="${t('payment.wechatQR') || '微信收款码'}">
                 </div>`;
             }
             if (donation.alipay) {
                 html += `<div class="donation-qr-section">
-                    <div class="donation-qr-label">💙 支付宝</div>
-                    <img src="${donation.alipay}" class="donation-qr-img" alt="支付宝收款码">
+                    <div class="donation-qr-label">${t('payment.alipay') || '💙 支付宝'}</div>
+                    <img src="${donation.alipay}" class="donation-qr-img" alt="${t('payment.alipayQR') || '支付宝收款码'}">
                 </div>`;
             }
             if (!donation.wechat && !donation.alipay) {
-                html += '<p style="color:var(--text-light);">管理员还没有设置收款码~</p>';
+                html += '<p style="color:var(--text-light);">' + (t('payment.noQR') || '管理员还没有设置收款码~') + '</p>';
             }
 
             if (isAdmin) {
                 html += `<div style="margin-top:20px;">
-                    <button class="btn-primary btn-sm" onclick="App.showDonationAdmin()">📷 上传收款码</button>
+                    <button class="btn-primary btn-sm" onclick="App.showDonationAdmin()">📷 ${t('donate.upload')}</button>
                 </div>`;
             }
 
@@ -1733,18 +1768,18 @@ const App = {
         const body = `
             <div>
                 <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
-                    上传微信和支付宝的收款码，其他用户可以在打赏页面看到。
+                    ${t('payment.uploadDesc') || '上传微信和支付宝的收款码，其他用户可以在打赏页面看到。'}
                 </p>
                 <div class="donation-upload-row">
                     <label class="donation-upload-btn">
-                        <span>💚 微信收款码</span>
+                        <span>${t('payment.wechatQR') || '💚 微信收款码'}</span>
                         <input type="file" accept="image/*" id="wechat-qr-input" style="display:none;">
                     </label>
                     <span id="wechat-qr-name" style="font-size:12px;color:var(--text-light);"></span>
                 </div>
                 <div class="donation-upload-row" style="margin-top:12px;">
                     <label class="donation-upload-btn">
-                        <span>💙 支付宝收款码</span>
+                        <span>${t('payment.alipayQR') || '💙 支付宝收款码'}</span>
                         <input type="file" accept="image/*" id="alipay-qr-input" style="display:none;">
                     </label>
                     <span id="alipay-qr-name" style="font-size:12px;color:var(--text-light);"></span>
@@ -1752,10 +1787,10 @@ const App = {
             </div>
         `;
         const footer = `
-            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-            <button class="btn-primary" id="upload-qr-btn">上传</button>
+            <button class="btn-secondary" onclick="App.closeModal()">${t('payment.cancelBtn') || '取消'}</button>
+            <button class="btn-primary" id="upload-qr-btn">${t('payment.uploadBtn')}</button>
         `;
-        this.showModal('上传收款码', body, footer);
+        this.showModal(t('payment.uploadTitle') || '上传收款码', body, footer);
 
         let wechatFile = null, alipayFile = null;
 
@@ -1770,7 +1805,7 @@ const App = {
 
         document.getElementById('upload-qr-btn').addEventListener('click', async () => {
             if (!wechatFile && !alipayFile) {
-                this.toast('请至少选择一张收款码', 'error');
+                this.toast(t('toast.noQR'), 'error');
                 return;
             }
             try {
@@ -1779,7 +1814,7 @@ const App = {
                 if (alipayFile) formData.append('alipay', alipayFile);
                 await this.apiUpload('/api/admin/donation', formData);
                 this.closeModal();
-                this.toast('收款码上传成功！', 'success');
+                this.toast(t('toast.qrUploaded'), 'success');
                 this.showDonation();
             } catch (e) {
                 this.toast('上传失败: ' + e.message, 'error');
@@ -1792,29 +1827,29 @@ const App = {
     showCreateGroupModal() {
         const body = `
             <div class="group-form">
-                <input type="text" id="group-name" placeholder="群名称" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;margin-bottom:10px;">
-                <textarea id="group-desc" placeholder="群简介（选填）" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;margin-bottom:10px;resize:vertical;min-height:60px;"></textarea>
+                <input type="text" id="group-name" placeholder="${t('group.namePlaceholder') || '群名称'}" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;margin-bottom:10px;">
+                <textarea id="group-desc" placeholder="${t('group.descPlaceholder') || '群简介（选填）'}" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;margin-bottom:10px;resize:vertical;min-height:60px;"></textarea>
                 <div style="display:flex;gap:10px;margin-bottom:10px;">
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
                         <input type="radio" name="group-type" value="public" checked onchange="document.getElementById('group-password-section').classList.add('hidden')">
-                        <span>公开群</span>
+                        <span>${t('group.publicLabel') || '🌐 公开群（所有人可加入）'}</span>
                     </label>
                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
                         <input type="radio" name="group-type" value="private" onchange="document.getElementById('group-password-section').classList.remove('hidden')">
-                        <span>私密群</span>
+                        <span>${t('group.privateLabel') || '🔒 私密群（需密码加入）'}</span>
                     </label>
                 </div>
                 <div id="group-password-section" class="hidden" style="margin-bottom:10px;">
-                    <input type="text" id="group-password" placeholder="入群密码" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
-                    <p style="font-size:11px;color:var(--text-light);margin-top:4px;">设置密码后，其他用户需要输入密码才能加入</p>
+                    <input type="text" id="group-password" placeholder="${t('group.passwordPlaceholder') || '入群密码'}" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
+                    <p style="font-size:11px;color:var(--text-light);margin-top:4px;">${t('group.passwordHint') || '设置密码后，其他用户需要输入密码才能加入'}</p>
                 </div>
             </div>
         `;
         const footer = `
-            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-            <button class="btn-primary" id="confirm-group-btn" style="padding:10px 24px;">创建</button>
+            <button class="btn-secondary" onclick="App.closeModal()">${t('group.cancelBtn') || '取消'}</button>
+            <button class="btn-primary" id="confirm-group-btn" style="padding:10px 24px;">${t('group.createBtn') || '创建'}</button>
         `;
-        this.showModal('创建群聊', body, footer);
+        this.showModal(t('group.createTitle') || '创建群聊', body, footer);
 
         document.getElementById('confirm-group-btn').addEventListener('click', async () => {
             const name = document.getElementById('group-name').value.trim();
@@ -1845,14 +1880,14 @@ const App = {
             if (group && group.hasPassword && !group.isMember) {
                 // Show password modal
                 const body = `<div>
-                    <p style="font-size:14px;margin-bottom:12px;">「${group.name}」是私密群组，需要输入密码才能加入：</p>
-                    <input type="password" id="join-password" placeholder="请输入入群密码" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
+                    <p style="font-size:14px;margin-bottom:12px;">「${group.name}」${t('group.privateJoinDesc')}</p>
+                    <input type="password" id="join-password" placeholder="${t('group.passwordInput')}" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
                 </div>`;
                 const footer = `
-                    <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-                    <button class="btn-primary" id="join-group-btn">加入</button>
+                    <button class="btn-secondary" onclick="App.closeModal()">${t('group.cancelBtn')}</button>
+                    <button class="btn-primary" id="join-group-btn">${t('group.joinBtn')}</button>
                 `;
-                this.showModal('加入私密群组', body, footer);
+                this.showModal(t('group.privateJoinTitle'), body, footer);
 
                 document.getElementById('join-group-btn').addEventListener('click', async () => {
                     const pw = document.getElementById('join-password').value.trim();
@@ -1860,7 +1895,7 @@ const App = {
                     try {
                         await this.api('/api/groups/join', 'POST', { groupId, password: pw });
                         this.closeModal();
-                        this.toast('已加入群聊！', 'success');
+                        this.toast(t('group.joined'), 'success');
                         this.renderDiscover();
                         this.renderChatList();
                     } catch (e) {
