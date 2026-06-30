@@ -235,8 +235,15 @@ input, textarea { font-family: inherit; }
     line-height: 1;
     display: none;
 }
-
-.sidebar-bottom { margin-top: auto; }
+/* 桌面端侧边栏底部的反馈/退出按钮 */
+.sidebar-bottom .feedback-btn span {
+    font-size: 11px;
+}
+/* 手机端显示导航文字 */
+@media (max-width: 768px) {
+    .nav-label { display: block; }
+    .sidebar-bottom .feedback-btn span { display: none; }
+}
 
 .content-area {
     flex: 1;
@@ -1052,7 +1059,32 @@ input, textarea { font-family: inherit; }
         background: var(--sidebar-bg);
     }
     .sidebar-top { display: none; }
-    .sidebar-bottom { display: none; }
+    .sidebar-bottom {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        margin-top: 0;
+    }
+    .sidebar-bottom .feedback-btn {
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0;
+        flex: 1;
+        height: 56px;
+        border-radius: 0;
+        font-size: 10px;
+        color: var(--text-light);
+    }
+    .sidebar-bottom .feedback-btn svg {
+        width: 22px; height: 22px;
+    }
+    .sidebar-bottom .feedback-btn:hover {
+        background: var(--bg);
+        color: var(--text);
+    }
     .nav-items {
         flex-direction: row;
         gap: 0;
@@ -1073,15 +1105,18 @@ input, textarea { font-family: inherit; }
     /* 手机端显示返回按钮 */
     .chat-back-btn { display: flex; }
 
-    /* 手机端主内容区域 */
+    /* 手机端主内容区域 - 使用 dvh 避免键盘遮挡 */
     .main-app {
         flex-direction: column;
         height: 100vh;
+        height: 100dvh;
     }
     .content-area {
         flex: 1;
         height: calc(100vh - 56px);
+        height: calc(100dvh - 56px);
         position: relative;
+        overflow: hidden;
     }
 
     /* 聊天列表面板全宽 */
@@ -1097,12 +1132,14 @@ input, textarea { font-family: inherit; }
         display: none;
     }
 
-    /* 聊天详情面板全屏 */
+    /* 聊天详情面板全屏 - 固定在内容区域内 */
     .detail-panel {
         position: absolute;
         inset: 0;
         z-index: 20;
         height: 100%;
+        display: flex;
+        flex-direction: column;
     }
     .detail-panel.hidden {
         display: none;
@@ -1121,15 +1158,36 @@ input, textarea { font-family: inherit; }
     .panel-header h2 { font-size: 16px; }
 
     /* 聊天头部 */
-    .chat-header { padding: 12px 16px; }
+    .chat-header { padding: 10px 12px; flex-shrink: 0; }
     .chat-header-name { font-size: 15px; }
 
-    /* 消息区域 */
-    .messages-area { padding: 12px; }
+    /* 消息区域 - 给输入框留足够空间 */
+    .messages-area {
+        padding: 10px 12px;
+        flex: 1;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
 
-    /* 输入框区域 */
-    .chat-input-area { padding: 8px 12px; }
-    .chat-input { font-size: 16px; } /* 防止 iOS 自动缩放 */
+    /* 输入框区域 - 确保始终可见 */
+    .chat-input-area {
+        padding: 8px 12px;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        flex-shrink: 0;
+        background: var(--card-bg);
+        border-top: 1px solid var(--border);
+    }
+    .chat-input {
+        font-size: 16px; /* 防止 iOS 自动缩放 */
+        min-height: 36px;
+        max-height: 100px;
+    }
+    .chat-tool-btn {
+        width: 32px; height: 32px;
+    }
+    .chat-send-btn {
+        width: 36px; height: 36px;
+    }
 
     /* 表情面板 */
     .emoji-panel {
@@ -1170,9 +1228,75 @@ input, textarea { font-family: inherit; }
 
 /* 超小屏幕（iPhone 5/SE 等） */
 @media (max-width: 374px) {
-    .sidebar { height: 50px; }
-    .nav-item svg { width: 20px; height: 20px; }
-    .content-area { height: calc(100vh - 50px); }
+    .sidebar { height: 48px; }
+    .nav-item svg { width: 18px; height: 18px; }
+    .content-area { height: calc(100dvh - 48px); }
     .auth-container { padding: 20px 16px; }
     .msg-row { max-width: 90%; }
+    .chat-input-area { padding: 6px 10px; }
+    .chat-input { min-height: 32px; font-size: 15px; }
 }
+
+/* ========== 反馈/设置 按钮 ========== */
+.feedback-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-light);
+    font-size: 13px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+    cursor: pointer;
+    background: none;
+    border: none;
+    width: 100%;
+}
+.feedback-btn:hover { color: var(--primary); background: var(--bg); }
+.feedback-btn svg { flex-shrink: 0; }
+
+/* 反馈面板 */
+.feedbacks-list { flex: 1; overflow-y: auto; padding: 12px; }
+.feedback-card {
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+}
+.feedback-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px;
+}
+.feedback-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; color: white;
+    flex-shrink: 0;
+}
+.feedback-user { font-weight: 600; font-size: 14px; }
+.feedback-time { font-size: 12px; color: var(--text-light); margin-left: auto; }
+.feedback-text {
+    font-size: 14px; line-height: 1.6; color: var(--text);
+    word-break: break-word;
+}
+.feedback-status {
+    display: inline-block; font-size: 12px; padding: 2px 8px;
+    border-radius: 10px; margin-top: 6px;
+}
+.feedback-status.pending { background: #fff3cd; color: #856404; }
+.feedback-status.resolved { background: #d4edda; color: #155724; }
+
+/* 管理员提升按钮 */
+.admin-promote-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: #ffd700;
+    color: #333;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: var(--transition);
+}
+.admin-promote-btn:hover { background: #ffc107; transform: scale(1.03); }
