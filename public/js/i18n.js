@@ -227,6 +227,8 @@ const I18N = {
         'admin.totalMoments': { 'zh-CN': '动态数', en: 'Moments', ja: 'モーメント数', ko: '모먼트 수' },
         'admin.todayMoments': { 'zh-CN': '今日动态', en: 'Today Moments', ja: '今日のモーメント', ko: '오늘 모먼트' },
         'admin.totalFriendships': { 'zh-CN': '好友关系', en: 'Friendships', ja: '友達関係', ko: '친구 관계' },
+        'admin.reports': { 'zh-CN': '举报管理', en: 'Reports', ja: '通報管理', ko: '신고 관리' },
+        'admin.noReports': { 'zh-CN': '暂无举报', en: 'No reports', ja: '通報なし', ko: '신고 없음' },
 
         // ---- Toast 附加 ----
         'toast.momentPostSuccess': { 'zh-CN': '动态发布成功！', en: 'Moment posted!', ja: '投稿成功！', ko: '모먼트 게시 성공!' },
@@ -275,6 +277,18 @@ const I18N = {
         'feedback.title': { 'zh-CN': '问题反馈', en: 'Feedback', ja: 'フィードバック', ko: '피드백' },
         'feedback.submit': { 'zh-CN': '提交反馈', en: 'Submit Feedback', ja: 'フィードバック送信', ko: '피드백 제출' },
         'feedback.cancel': { 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル', ko: '취소' },
+
+        // ---- 举报 ----
+        'report.title': { 'zh-CN': '举报用户', en: 'Report User', ja: 'ユーザーを通報', ko: '사용자 신고' },
+        'report.desc': { 'zh-CN': '举报用户：{name}', en: 'Report user: {name}', ja: 'ユーザーを通報: {name}', ko: '사용자 신고: {name}' },
+        'report.placeholder': { 'zh-CN': '请详细描述举报原因...', en: 'Describe the reason for this report...', ja: '通報理由を詳しく記述してください...', ko: '신고 사유를 자세히 설명하세요...' },
+        'report.submit': { 'zh-CN': '提交举报', en: 'Submit Report', ja: '通報を送信', ko: '신고 제출' },
+        'report.cancel': { 'zh-CN': '取消', en: 'Cancel', ja: 'キャンセル', ko: '취소' },
+        'report.addImage': { 'zh-CN': '添加图片', en: 'Add Image', ja: '画像を追加', ko: '이미지 추가' },
+        'report.maxImages': { 'zh-CN': '最多3张', en: 'Max 3 images', ja: '最大3枚まで', ko: '최대 3개' },
+        'report.tooShort': { 'zh-CN': '举报内容至少2个字符', en: 'Report must be at least 2 chars', ja: '2文字以上入力してください', ko: '2자 이상 입력하세요' },
+        'report.success': { 'zh-CN': '举报已提交，管理员会尽快处理', en: 'Report submitted, admin will review soon', ja: '通報が送信されました。管理者が確認します', ko: '신고가 제출되었습니다. 관리자가 검토할 예정입니다' },
+        'report.newReportToast': { 'zh-CN': '收到新举报，请查看举报管理', en: 'New report received', ja: '新しい通報があります', ko: '새 신고가 도착했습니다' },
         'group.createTitle': { 'zh-CN': '创建群聊', en: 'Create Group', ja: 'グループ作成', ko: '그룹 만들기' },
         'group.namePlaceholder': { 'zh-CN': '群名称', en: 'Group Name', ja: 'グループ名', ko: '그룹 이름' },
         'group.descPlaceholder': { 'zh-CN': '群简介（选填）', en: 'Description (optional)', ja: '説明（任意）', ko: '설명（선택）' },
