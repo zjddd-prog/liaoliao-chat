@@ -390,7 +390,14 @@ const App = {
 
             const listEl = document.getElementById('chat-list');
             listEl.innerHTML = items.length === 0
-                ? `<div class="empty-state"><p>${t('chat.noChats')}</p></div>`
+                ? `<div class="empty-state" style="padding:40px 20px;text-align:center;">
+                    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--text-light)" stroke-width="1.5" style="margin-bottom:16px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                    <p style="margin-bottom:16px;">${t('chat.noChats')}</p>
+                    <button class="btn-create-group btn-create-group-prompt" onclick="App.showCreateGroupModal()">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                        <span>${t('group.create')}</span>
+                    </button>
+                </div>`
                 : items.map(item => {
                     const isActive = this.currentChatType === item.type && this.currentChatId === item.id;
                     const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
