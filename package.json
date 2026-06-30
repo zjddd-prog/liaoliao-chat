@@ -1,7 +1,7 @@
 {
   "name": "liaoliao-chat",
   "version": "1.0.0",
-  "description": "飞友之家 - 真正的多人在线社交聊天平台",
+  "description": "聊聊 - 真正的多人在线社交聊天平台",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -13,7 +13,6 @@
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
     "multer": "^1.4.5-lts.1",
-    "bcryptjs": "^2.4.3",
-    "pg": "^8.13.0"
+    "bcryptjs": "^2.4.3"
   }
 }
