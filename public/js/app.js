@@ -67,20 +67,15 @@ const App = {
             this.renderChatList();
         });
 
-        // 聊天列表事件委托——提升移动端触控可靠性
+        // 聊天列表事件委托——点击任意位置直接打开聊天
         document.getElementById('chat-list')?.addEventListener('click', (e) => {
             const chatItem = e.target.closest('.chat-item');
             if (!chatItem) return;
-            // 如果点击的是头像，由 viewProfile 处理
-            if (e.target.closest('.chat-avatar')) return;
             const type = chatItem.dataset.chatType;
             const id = chatItem.dataset.chatId;
             const name = chatItem.dataset.chatName;
-            const avatarColor = chatItem.dataset.avatarColor;
-            const avatarText = chatItem.dataset.avatarText;
-            const avatarUrl = chatItem.dataset.avatarUrl || '';
             if (type && id && name) {
-                this.openChat(type, id, name, avatarColor, avatarText, avatarUrl);
+                this.openChat(type, id, name);
             }
         });
 
@@ -89,20 +84,30 @@ const App = {
             this.renderContacts(e.target.value.toLowerCase());
         });
 
-        // 通讯录列表事件委托——点击联系人打开聊天
+        // 通讯录列表事件委托——点击联系人直接打开聊天
         document.getElementById('contacts-list')?.addEventListener('click', (e) => {
             const contactItem = e.target.closest('.contact-item');
             if (!contactItem) return;
-            // 如果点击的是头像或举报按钮，不打开聊天
-            if (e.target.closest('.contact-avatar') || e.target.closest('.contact-report-btn')) return;
+            // 只跳过举报按钮
+            if (e.target.closest('.contact-report-btn')) return;
             const type = contactItem.dataset.chatType;
             const id = contactItem.dataset.chatId;
             const name = contactItem.dataset.chatName;
-            const avatarColor = contactItem.dataset.avatarColor;
-            const avatarText = contactItem.dataset.avatarText;
-            const avatarUrl = contactItem.dataset.avatarUrl || '';
             if (type && id && name) {
-                this.openChat(type, id, name, avatarColor, avatarText, avatarUrl);
+                this.openChat(type, id, name);
+            }
+        });
+
+        // 发现页事件委托——好友卡片点击直接打开聊天
+        document.getElementById('discover-content')?.addEventListener('click', (e) => {
+            const card = e.target.closest('.discover-user-card');
+            if (!card) return;
+            if (e.target.closest('button')) return; // 按钮由各自的onclick处理
+            const type = card.dataset.chatType;
+            const id = card.dataset.chatId;
+            const name = card.dataset.chatName;
+            if (type && id && name) {
+                this.openChat(type, id, name);
             }
         });
 
@@ -579,13 +584,9 @@ const App = {
 
     updateNavAvatar() {
         const avatar = document.getElementById('nav-avatar');
-        if (this.currentUser?.avatarUrl) {
-            avatar.innerHTML = `<img src="${this.currentUser.avatarUrl}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
-            avatar.style.background = 'transparent';
-        } else {
-            avatar.textContent = this.currentUser?.avatarText || '?';
-            avatar.style.background = this.currentUser?.avatarColor || '#667eea';
-        }
+        if (!avatar) return;
+        avatar.textContent = (this.currentUser?.nickname || '?')[0];
+        avatar.style.background = this.currentUser?.avatarColor || '#667eea';
     },
 
     renderAll() {
@@ -712,21 +713,13 @@ const App = {
                 const isActive = this.currentChatType === item.type && this.currentChatId === item.id;
                 const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
                 const memberTag = item.type === 'group' ? `<span style="font-size:12px;color:var(--text-light);">(${item.memberCount}人)</span>` : '';
-                const avatarHTML = item.avatarUrl
-                    ? `<img src="${this.escapeAttr(item.avatarUrl)}" alt="" loading="lazy">`
-                    : this.escapeHtml(item.avatarText);
-                const nameClickHandler = item.type === 'private'
-                    ? `onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(item.id)}')"`
-                    : '';
-                const openChatAttr = this._ao('openChat', item.type, item.id, item.name, item.avatarColor, item.avatarText, item.avatarUrl || '');
                 return `
-                    <div class="chat-item ${isActive ? 'active' : ''}" data-chat-type="${this.escapeAttr(item.type)}" data-chat-id="${this.escapeAttr(item.id)}" data-chat-name="${this.escapeAttr(item.name)}" data-avatar-color="${this.escapeAttr(item.avatarColor)}" data-avatar-text="${this.escapeAttr(item.avatarText)}" data-avatar-url="${this.escapeAttr(item.avatarUrl || '')}">
-                        <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(item.id)}')" title="查看主页">${avatarHTML}</div>
-                        <div class="chat-info" ${openChatAttr}>
-                            <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${this.escapeHtml(item.name)}</span> ${memberTag}</div>
+                    <div class="chat-item ${isActive ? 'active' : ''}" data-chat-type="${this.escapeAttr(item.type)}" data-chat-id="${this.escapeAttr(item.id)}" data-chat-name="${this.escapeAttr(item.name)}">
+                        <div class="chat-info" style="cursor:pointer;">
+                            <div class="chat-name">${onlineDot} ${this.escapeHtml(item.name)} ${memberTag}</div>
                             <div class="chat-last-msg">${item.lastMsg ? this.escapeHtml(item.lastMsg) : t('chat.startChat')}</div>
                         </div>
-                        <div class="chat-meta" ${openChatAttr}>
+                        <div class="chat-meta">
                             <span class="chat-time">${item.time || ''}</span>
                             ${item.unread > 0 ? `<span class="chat-unread">${item.unread}</span>` : ''}
                         </div>
@@ -746,7 +739,7 @@ const App = {
 
     // ========== 打开聊天 ==========
 
-    async openChat(type, id, name, avatarColor, avatarText, avatarUrl) {
+    async openChat(type, id, name) {
         this.currentChatType = type;
         this.currentChatId = id;
         this.currentChatName = name;
@@ -754,19 +747,15 @@ const App = {
 
         const isMobile = window.innerWidth <= 1024;
 
-        // 构建聊天头部（已转义防XSS）
+        // 构建聊天头部
         const escId = this.escapeAttr(id);
         const escName = this.escapeHtml(name);
-        const escAvatarUrl = this.escapeAttr(avatarUrl || '');
         const header = `
             <div class="chat-header">
                 <button class="chat-back-btn" onclick="App.closeChatMobile()">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
-                <div class="msg-avatar" style="background:${avatarColor};cursor:pointer;" onclick="App.viewProfile('${escId}')">
-                    ${avatarUrl ? `<img src="${escAvatarUrl}" alt="">` : this.escapeHtml(avatarText)}
-                </div>
-                <div style="cursor:pointer;" onclick="App.viewProfile('${escId}')">
+                <div class="chat-header-info">
                     <div class="chat-header-name">${escName}</div>
                     <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? t('chat.online') : t('chat.offline')) : t('chat.group')}</div>
                 </div>
@@ -1089,9 +1078,7 @@ const App = {
             content,
             messageType: 'text',
             timestamp: Date.now(),
-            fromNickname: this.currentUser.nickname,
-            fromAvatarColor: this.currentUser.avatarColor,
-            fromAvatarText: this.currentUser.avatarText
+            fromNickname: this.currentUser.nickname
         };
         this.appendMessage(localMsg, 'self');
 
@@ -1321,21 +1308,16 @@ const App = {
                 </div>`
                 : filtered.map(f => {
                     const isOnline = this.onlineUsers.includes(f.id);
-                    const avatarHTML = f.avatarUrl ? `<img src="${this.escapeAttr(f.avatarUrl)}" alt="">` : this.escapeHtml(f.avatarText);
-                    const bgColor = f.avatarUrl ? 'transparent' : f.avatarColor;
                     const escId = this.escapeAttr(f.id);
-                    const openChatAttr = this._ao('openChat', 'private', f.id, f.nickname, f.avatarColor, f.avatarText, f.avatarUrl || '');
                     return `
-                        <div class="contact-item" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(f.nickname)}" data-avatar-color="${this.escapeAttr(f.avatarColor)}" data-avatar-text="${this.escapeAttr(f.avatarText)}" data-avatar-url="${this.escapeAttr(f.avatarUrl || '')}">
-                            <div class="contact-avatar" style="background:${bgColor}" onclick="event.stopPropagation();App.viewProfile('${escId}')" title="查看主页">${avatarHTML}</div>
-                            <div class="contact-info" ${openChatAttr}>
-                                <div class="contact-name"><span onclick="event.stopPropagation();App.viewProfile('${escId}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--primary-light);text-underline-offset:2px;">${this.escapeHtml(f.nickname)}</span></div>
+                        <div class="contact-item" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(f.nickname)}">
+                            <div class="contact-info" style="cursor:pointer;">
+                                <div class="contact-name">${this.escapeHtml(f.nickname)} ${isOnline ? '<span style="color:#43e97b;font-size:10px;">● 在线</span>' : ''}</div>
                                 <div class="contact-bio">${this.escapeHtml(f.bio || '')}</div>
                             </div>
                             <button class="contact-report-btn" onclick="event.stopPropagation();App.showReportModal('${escId}','${this.escapeAttr(f.nickname)}')" title="${t('report.title') || '举报'}">
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                             </button>
-                            ${isOnline ? '<div class="contact-online-dot"></div>' : ''}
                         </div>
                     `;
                 }).join('');
@@ -1359,8 +1341,6 @@ const App = {
                     <p>${t('moments.emptyHint') || '发布你的第一条动态吧'}</p>
                 </div>`
                 : moments.map(m => {
-                    const avatarHTML = m.avatarUrl ? `<img src="${this.escapeAttr(m.avatarUrl)}" alt="">` : this.escapeHtml(m.avatarText);
-                    const bgColor = m.avatarUrl ? 'transparent' : m.avatarColor;
                     const liked = m.likes.includes(this.currentUser.id);
                     const likeCount = m.likes.length;
                     const escUserId = this.escapeAttr(m.userId);
@@ -1391,7 +1371,6 @@ const App = {
                     return `
                         <div class="moment-card">
                             <div class="moment-header">
-                                <div class="moment-avatar" style="background:${bgColor};cursor:pointer;" onclick="App.viewProfile('${escUserId}')">${avatarHTML}</div>
                                 <div>
                                     <div class="moment-name" style="cursor:pointer;" onclick="App.viewProfile('${escUserId}')">${this.escapeHtml(m.nickname)}</div>
                                     <div class="moment-time">${this.formatTime(m.createdAt)}</div>
@@ -1583,7 +1562,6 @@ const App = {
                     const typeLabel = g.type === 'private' ? '🔒 ' + (t('discover.privateGroup') || '私密') : '🌐 ' + (t('discover.publicGroup') || '公开');
                     html += `
                         <div class="discover-user-card" onclick="App.joinGroup('${g.id}')">
-                            <div class="discover-user-avatar" style="background:${g.avatarColor}">${g.avatarText}</div>
                             <div class="discover-user-info">
                                 <div class="discover-user-name">${g.name} <span class="group-type-tag group-type-${g.type || 'public'}">${typeLabel}</span></div>
                                 <div class="discover-user-bio">${g.description || '暂无简介'} · ${g.memberCount}人</div>
@@ -1598,18 +1576,14 @@ const App = {
             if (friends.length > 0) {
                 html += `<div class="discover-section-title" style="margin-top:20px;">👥 ${t('discover.myFriends') || '我的好友'} (${friends.length})</div>`;
                 friends.forEach(u => {
-                    const avatarHTML = u.avatarUrl ? `<img src="${this.escapeAttr(u.avatarUrl)}" alt="">` : this.escapeHtml(u.avatarText);
-                    const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
                     const escId = this.escapeAttr(u.id);
-                    const openChatAttr = this._ao('openChat', 'private', u.id, u.nickname, u.avatarColor, u.avatarText, u.avatarUrl || '');
                     html += `
-                        <div class="discover-user-card">
-                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${avatarHTML}</div>
-                            <div class="discover-user-info" ${openChatAttr}>
-                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${this.escapeHtml(u.nickname)}</div>
+                        <div class="discover-user-card" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(u.nickname)}">
+                            <div class="discover-user-info" style="cursor:pointer;">
+                                <div class="discover-user-name">${this.escapeHtml(u.nickname)}</div>
                                 <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
                             </div>
-                            <button class="btn-secondary btn-sm" ${openChatAttr}>${t('discover.chat')}</button>
+                            <button class="btn-secondary btn-sm">${t('discover.chat')}</button>
                         </div>
                     `;
                 });
@@ -1619,14 +1593,11 @@ const App = {
             if (nonFriends.length > 0) {
                 html += `<div class="discover-section-title" style="margin-top:20px;">✨ ${t('discover.recommendUsers') || '推荐用户'}</div>`;
                 nonFriends.forEach(u => {
-                    const avatarHTML = u.avatarUrl ? `<img src="${this.escapeAttr(u.avatarUrl)}" alt="">` : this.escapeHtml(u.avatarText);
-                    const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
                     const escId = this.escapeAttr(u.id);
                     html += `
                         <div class="discover-user-card">
-                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${avatarHTML}</div>
                             <div class="discover-user-info">
-                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${escId}')">${this.escapeHtml(u.nickname)}</div>
+                                <div class="discover-user-name">${this.escapeHtml(u.nickname)}</div>
                                 <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
                             </div>
                             <button class="btn-primary btn-sm" onclick="App.addFriend('${escId}')">${t('discover.addFriend')}</button>
@@ -1658,11 +1629,8 @@ const App = {
         try {
             const members = await this.api(`/api/groups/${groupId}/members`);
             const body = members.map(m => {
-                const avatarHTML = m.avatarUrl ? `<img src="${m.avatarUrl}" alt="">` : m.avatarText;
-                const bgColor = m.avatarUrl ? 'transparent' : m.avatarColor;
                 return `
                     <div class="contact-item">
-                        <div class="contact-avatar" style="background:${bgColor}">${avatarHTML}</div>
                         <div class="contact-info">
                             <div class="contact-name">${m.nickname}</div>
                         </div>
@@ -2374,10 +2342,7 @@ const App = {
             const iBlockedThem = blockedData.blockedUsers.includes(userId);
 
             // Build profile page
-            const avatarHTML = user.avatarUrl
-                ? `<img src="${user.avatarUrl}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`
-                : `<span style="font-size:40px;color:white;">${user.avatarText}</span>`;
-            const bgColor = user.avatarUrl ? 'transparent' : user.avatarColor;
+            const roleBadge = user.role === 'super_admin' ? 'super_admin' : user.role === 'admin' ? 'admin' : 'user';
 
             let momentsHTML = '';
             if (user.moments && user.moments.length > 0) {
@@ -2463,14 +2428,6 @@ const App = {
             `;
             contentEl.innerHTML = `
                 <div class="profile-header-area">
-                    <div class="profile-big-avatar" style="background:${bgColor}">${avatarHTML}</div>
-                    ${isSelf ? `<div class="avatar-upload-area">
-                        <label class="avatar-upload-btn">
-                            ${t('profile.changeAvatar')}
-                            <input type="file" accept="image/*" id="avatar-file-input" style="display:none;" onchange="App.uploadAvatar()">
-                        </label>
-                        <span class="avatar-upload-status" id="avatar-upload-status"></span>
-                    </div>` : ''}
                     <div class="profile-name">${user.nickname}</div>
                     ${user.role !== 'user' ? `<div class="profile-role-badge ${roleBadge}">${roleLabels[roleBadge]}</div>` : ''}
                     ${bioHTML}
@@ -2484,7 +2441,7 @@ const App = {
                             iBlockedThem ?
                                 `<button class="btn-secondary btn-sm" onclick="App.unblockUser('${this.escapeAttr(user.id)}','${this.escapeAttr(user.nickname)}')" style="background:#43e97b;color:#fff;">✅ 取消拉黑</button>`
                                 :
-                                `<button class="btn-primary btn-sm" ${this._ao('openChat', 'private', user.id, user.nickname, user.avatarColor, user.avatarText, user.avatarUrl || '')}>💬 私信</button>
+                                `<button class="btn-primary btn-sm" ${this._ao('openChat', 'private', user.id, user.nickname)}>💬 私信</button>
                                  <button class="btn-danger btn-sm" onclick="App.blockUser('${this.escapeAttr(user.id)}','${this.escapeAttr(user.nickname)}')" style="background:#ff4757;color:#fff;">🚫 拉黑</button>
                                  <button class="btn-warning btn-sm report-profile-btn" onclick="App.showReportModal('${this.escapeAttr(user.id)}','${this.escapeAttr(user.nickname)}')" style="background:#ff9f43;color:#fff;">⚠️ ${t('report.title') || '举报'}</button>`
                             : ''}
@@ -2639,31 +2596,6 @@ const App = {
         } catch (e) {
             this.toast(e.message, 'error');
         }
-    },
-
-    uploadAvatar() {
-        const fileInput = document.getElementById('avatar-file-input');
-        const file = fileInput.files[0];
-        if (!file) return;
-        if (file.size > 5 * 1024 * 1024) {
-            this.toast(t('toast.avatarTooBig'), 'error');
-            return;
-        }
-        const statusEl = document.getElementById('avatar-upload-status');
-        statusEl.textContent = t('toast.avatarUploading');
-        const formData = new FormData();
-        formData.append('avatar', file);
-        this.apiUpload('/api/avatar', formData).then(data => {
-            this.currentUser.avatarUrl = data.avatarUrl;
-            this.updateNavAvatar();
-            this.toast(t('toast.avatarUpdated'), 'success');
-            statusEl.textContent = t('toast.avatarSuccess');
-            // Reload profile
-            this.viewProfile(this.currentUser.id, true);
-        }).catch(e => {
-            statusEl.textContent = '';
-            this.toast('上传失败: ' + e.message, 'error');
-        });
     },
 
     // ========== 打赏 ==========
