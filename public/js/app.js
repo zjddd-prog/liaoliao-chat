@@ -15,6 +15,8 @@ const App = {
     userPoints: 0,
     userBubbleStyle: 0,
     profileUserId: null,
+    _chatListDebounce: null,
+    _unreadBelow: 0,
 
     // ========== 初始化 ==========
 
@@ -232,13 +234,12 @@ const App = {
                 this.scrollToBottom();
             }
             // 刷新聊天列表
-            this.renderChatList();
-            this.updateUnreadBadge();
+            this.refreshChatListDebounced();
         });
 
         this.socket.on('private-message-sent', (msg) => {
             // 自己发的消息确认
-            this.renderChatList();
+            this.refreshChatListDebounced();
         });
 
         this.socket.on('group-message', (msg) => {
@@ -248,7 +249,7 @@ const App = {
                 this.appendMessage(msg, isSelf ? 'self' : 'other');
                 this.scrollToBottom();
             }
-            this.renderChatList();
+            this.refreshChatListDebounced();
         });
 
         this.socket.on('typing', (data) => {
@@ -267,18 +268,18 @@ const App = {
 
         this.socket.on('online-list', (list) => {
             this.onlineUsers = list;
-            this.renderChatList();
+            this.refreshChatListDebounced();
             this.renderContacts();
         });
 
-        this.socket.on('user-online', () => { this.renderChatList(); this.renderContacts(); });
-        this.socket.on('user-offline', () => { this.renderChatList(); this.renderContacts(); });
+        this.socket.on('user-online', () => { this.refreshChatListDebounced(); this.renderContacts(); });
+        this.socket.on('user-offline', () => { this.refreshChatListDebounced(); this.renderContacts(); });
 
         this.socket.on('new-moment', () => { this.renderMoments(); });
         this.socket.on('moment-updated', () => { this.renderMoments(); });
         this.socket.on('moment-deleted', () => { this.renderMoments(); });
-        this.socket.on('user-deleted', () => { this.renderChatList(); this.renderContacts(); this.renderMoments(); });
-        this.socket.on('groups-updated', () => { this.renderChatList(); });
+        this.socket.on('user-deleted', () => { this.refreshChatListDebounced(); this.renderContacts(); this.renderMoments(); });
+        this.socket.on('groups-updated', () => { this.refreshChatListDebounced(); });
 
         this.socket.on('banned', (data) => {
             this.toast(data.message, 'error');
@@ -302,10 +303,6 @@ const App = {
 
         this.socket.on('new-feedback', (data) => {
             this.showFeedbackDot();
-        });
-
-        this.socket.on('disconnect', () => {
-            console.log('Socket disconnected');
         });
     },
 
@@ -354,6 +351,7 @@ const App = {
         const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
         if (force || isNearBottom) {
             area.scrollTop = area.scrollHeight;
+            this._unreadBelow = 0;
         }
         this.updateScrollButton();
     },
@@ -364,18 +362,14 @@ const App = {
         const threshold = 150;
         const btn = document.getElementById('scroll-bottom-btn');
         const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
-        if (!isNearBottom) {
-            if (!btn) {
-                const newBtn = document.createElement('div');
-                newBtn.id = 'scroll-bottom-btn';
-                newBtn.className = 'scroll-bottom-btn';
-                newBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
-                newBtn.onclick = () => this.scrollToBottom(true);
-                area.parentElement.style.position = 'relative';
-                area.parentElement.appendChild(newBtn);
+        if (btn) {
+            const show = !isNearBottom || this._unreadBelow > 0;
+            btn.style.display = show ? 'flex' : 'none';
+            if (this._unreadBelow > 0) {
+                btn.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg><span class="badge">${this._unreadBelow}</span>`;
+            } else {
+                btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
             }
-        } else if (btn) {
-            btn.remove();
         }
     },
 
@@ -429,12 +423,13 @@ const App = {
 
     async renderChatList() {
         try {
-            // 获取好友列表
-            const friends = await this.api('/api/friends');
-            // 获取群组列表
-            const groups = await this.api('/api/groups');
-            // 获取未读数
-            const unread = await this.api('/api/messages/unread');
+            // 并行批量获取所有数据
+            const [friends, groups, unread, lastMessages] = await Promise.all([
+                this.api('/api/friends'),
+                this.api('/api/groups'),
+                this.api('/api/messages/unread'),
+                this.api('/api/chats/last-messages')
+            ]);
 
             let items = [];
 
@@ -442,6 +437,7 @@ const App = {
             friends.forEach(f => {
                 const isOnline = this.onlineUsers.includes(f.id);
                 const unreadCount = unread.private?.[f.id] || 0;
+                const lastMsg = lastMessages[f.id];
                 items.push({
                     type: 'private',
                     id: f.id,
@@ -449,16 +445,18 @@ const App = {
                     avatarColor: f.avatarColor,
                     avatarText: f.avatarText,
                     avatarUrl: f.avatarUrl,
-                    lastMsg: '', // 要从消息历史获取
-                    time: '',
+                    lastMsg: lastMsg ? lastMsg.content : '',
+                    time: lastMsg ? this.formatTime(lastMsg.timestamp) : '',
                     unread: unreadCount,
-                    online: isOnline
+                    online: isOnline,
+                    ts: lastMsg ? lastMsg.timestamp : 0
                 });
             });
 
             // 群聊
             groups.forEach(g => {
                 const unreadCount = unread.group?.[g.id] || 0;
+                const lastMsg = lastMessages[g.id];
                 items.push({
                     type: 'group',
                     id: g.id,
@@ -466,11 +464,12 @@ const App = {
                     avatarColor: g.avatarColor,
                     avatarText: g.avatarText,
                     avatarUrl: null,
-                    lastMsg: '',
-                    time: '',
+                    lastMsg: lastMsg ? lastMsg.content : '',
+                    time: lastMsg ? this.formatTime(lastMsg.timestamp) : '',
                     unread: unreadCount,
                     online: true,
-                    memberCount: g.memberCount
+                    memberCount: g.memberCount,
+                    ts: lastMsg ? lastMsg.timestamp : 0
                 });
             });
 
@@ -479,24 +478,12 @@ const App = {
                 items = items.filter(item => item.name.toLowerCase().includes(this.chatSearchQuery));
             }
 
-            // 获取最后一条消息（从API）
-            // 为了性能，只获取前20个聊天的最后消息
-            for (let item of items) {
-                try {
-                    const url = item.type === 'private'
-                        ? `/api/messages/private/${item.id}`
-                        : `/api/messages/group/${item.id}`;
-                    const msgs = await this.api(url);
-                    if (msgs.length > 0) {
-                        const last = msgs[msgs.length - 1];
-                        item.lastMsg = last.messageType === 'image' ? '[图片]' : last.content;
-                        item.time = this.formatTime(last.timestamp);
-                    }
-                } catch { /* skip */ }
-            }
-
-            // 按未读优先排序，然后按时间
-            items.sort((a, b) => (b.unread > 0 ? 1 : 0) - (a.unread > 0 ? 1 : 0));
+            // 按最近消息时间排序（有未读的优先，然后按时间降序）
+            items.sort((a, b) => {
+                if (a.unread > 0 && b.unread === 0) return -1;
+                if (a.unread === 0 && b.unread > 0) return 1;
+                return (b.ts || 0) - (a.ts || 0);
+            });
 
             const listEl = document.getElementById('chat-list');
             listEl.innerHTML = items.length === 0
@@ -538,12 +525,22 @@ const App = {
         }
     },
 
+    // 防抖刷新聊天列表（socket事件触发时使用)
+    refreshChatListDebounced() {
+        clearTimeout(this._chatListDebounce);
+        this._chatListDebounce = setTimeout(() => {
+            this.renderChatList();
+            this.updateUnreadBadge();
+        }, 300);
+    },
+
     // ========== 打开聊天 ==========
 
     async openChat(type, id, name, avatarColor, avatarText, avatarUrl) {
         this.currentChatType = type;
         this.currentChatId = id;
         this.currentChatName = name;
+        this._unreadBelow = 0;
 
         // 构建聊天头部
         const header = `
@@ -582,7 +579,7 @@ const App = {
                         </svg>
                     </button>
                 </div>
-                <textarea class="chat-input" id="chat-input" data-i18n-placeholder="chat.input" placeholder="${t('chat.input')}" rows="1"
+                <textarea class="chat-input" id="chat-input" data-i18n-placeholder="chat.input" placeholder="${t('chat.input')}" rows="1" maxlength="5000"
                     onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();App.sendMessage()}"
                     oninput="App.onTyping()"></textarea>
                 <button class="chat-send-btn" onclick="App.sendMessage()">
@@ -595,6 +592,19 @@ const App = {
         `;
 
         document.getElementById('chat-detail').innerHTML = header + messagesArea + inputArea;
+
+        // 预创建滚动到底按钮（后续只切换可见性）
+        const detailPanel = document.getElementById('chat-detail');
+        let scrollBtn = document.getElementById('scroll-bottom-btn');
+        if (!scrollBtn) {
+            scrollBtn = document.createElement('div');
+            scrollBtn.id = 'scroll-bottom-btn';
+            scrollBtn.className = 'scroll-bottom-btn';
+            scrollBtn.style.display = 'none';
+            scrollBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+            scrollBtn.onclick = () => this.scrollToBottom(true);
+            detailPanel.appendChild(scrollBtn);
+        }
 
         // 加载消息历史
         await this.loadMessages();
@@ -616,16 +626,35 @@ const App = {
             if (listPanel) listPanel.classList.add('hidden');
             if (detailPanel) detailPanel.classList.remove('hidden');
         }
+
+        // 自动聚焦输入框
+        setTimeout(() => {
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) chatInput.focus();
+        }, 100);
     },
 
     async loadMessages() {
+        const area = document.getElementById('messages-area');
+        // 显示加载中骨架屏
+        area.innerHTML = `
+            <div class="loading-skeleton">
+                <div class="skeleton-msg skeleton-other"></div>
+                <div class="skeleton-msg skeleton-other short"></div>
+                <div class="skeleton-msg skeleton-self"></div>
+                <div class="skeleton-msg skeleton-other"></div>
+                <div class="skeleton-msg skeleton-self short"></div>
+                <div class="skeleton-msg skeleton-other"></div>
+                <div class="skeleton-msg skeleton-self"></div>
+            </div>
+        `;
+
         try {
             const url = this.currentChatType === 'private'
                 ? `/api/messages/private/${this.currentChatId}`
                 : `/api/messages/group/${this.currentChatId}`;
             const messages = await this.api(url);
 
-            const area = document.getElementById('messages-area');
             area.innerHTML = '';
 
             messages.forEach(msg => {
@@ -633,9 +662,10 @@ const App = {
                 this.appendMessage(msg, isSelf ? 'self' : 'other');
             });
 
-            this.scrollToBottom();
+            this.scrollToBottom(true);
         } catch (e) {
             console.error('Failed to load messages:', e);
+            area.innerHTML = '<div class="empty-state"><p>加载消息失败，请刷新重试</p></div>';
         }
     },
 
@@ -652,6 +682,7 @@ const App = {
     sendMessage() {
         if (this._sendLock) return;
         const input = document.getElementById('chat-input');
+        const sendBtn = document.querySelector('.chat-send-btn');
         const content = input.value.trim();
         if (!content) return;
 
@@ -751,6 +782,14 @@ const App = {
         if (!area) return;
 
         const isSelf = side === 'self';
+
+        // 如果用户没有在底部(在看历史消息)，新消息计入未读数
+        const threshold = 100;
+        const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
+        if (!isSelf && !isNearBottom) {
+            this._unreadBelow++;
+            this.updateScrollButton();
+        }
         const time = this.formatTime(msg.timestamp);
 
         // 头像
@@ -813,6 +852,13 @@ const App = {
         if (!this.socket) return;
         this.socket.emit('typing', { to: this.currentChatId, type: this.currentChatType });
 
+        // 更新发送按钮禁用状态
+        const input = document.getElementById('chat-input');
+        const sendBtn = document.querySelector('.chat-send-btn');
+        if (sendBtn) {
+            sendBtn.disabled = !input.value.trim();
+        }
+
         clearTimeout(this.typingTimer);
         this.typingTimer = setTimeout(() => {
             this.socket.emit('stop-typing', { to: this.currentChatId, type: this.currentChatType });
@@ -872,8 +918,8 @@ const App = {
             const friends = await this.api('/api/friends');
 
             let filtered = friends;
-            if (search) {
-                filtered = friends.filter(f => f.nickname.toLowerCase().includes(search));
+            if (search && search.trim()) {
+                filtered = friends.filter(f => f.nickname.toLowerCase().includes(search.toLowerCase()));
             }
 
             const listEl = document.getElementById('contacts-list');
@@ -1563,6 +1609,10 @@ const App = {
 
     toast(message, type = 'info') {
         const container = document.getElementById('toast-container');
+        // 限制最多3个toast，超出移除最早的
+        while (container.children.length >= 3) {
+            container.firstChild.remove();
+        }
         const el = document.createElement('div');
         el.className = `toast ${type}`;
         el.textContent = message;
