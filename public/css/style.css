@@ -1056,14 +1056,13 @@ input, textarea { font-family: inherit; }
         width: 100%;
         height: 56px;
         flex-direction: row;
-        padding: 0 8px;
+        padding: 0 4px;
         z-index: 100;
         border-top: 1px solid #444;
         background: var(--sidebar-bg);
     }
     .sidebar-top { display: none; }
     .sidebar-points { display: none; }
-    /* Mobile checkin button in bottom bar */
     .checkin-mobile-btn { display: flex; }
     .sidebar-bottom {
         display: flex;
@@ -1073,7 +1072,6 @@ input, textarea { font-family: inherit; }
         margin-top: 0;
         width: 100%;
     }
-    /* Make sidebar-btn (气泡/打赏/签到) match feedback-btn mobile style */
     .sidebar-btn {
         justify-content: center;
         align-items: center;
@@ -1093,7 +1091,6 @@ input, textarea { font-family: inherit; }
     .sidebar-btn svg { width: 20px; height: 20px; }
     .sidebar-btn-label { display: block; font-size: 10px; }
     .sidebar-btn:hover { background: var(--bg); color: var(--text); }
-    /* Checkin button states */
     .checkin-mobile-btn.checked { color: #f5576c; }
     .sidebar-bottom .feedback-btn {
         justify-content: center;
@@ -1107,13 +1104,8 @@ input, textarea { font-family: inherit; }
         font-size: 10px;
         color: var(--text-light);
     }
-    .sidebar-bottom .feedback-btn svg {
-        width: 22px; height: 22px;
-    }
-    .sidebar-bottom .feedback-btn:hover {
-        background: var(--bg);
-        color: var(--text);
-    }
+    .sidebar-bottom .feedback-btn svg { width: 20px; height: 20px; }
+    .sidebar-bottom .feedback-btn:hover { background: var(--bg); color: var(--text); }
     .nav-items {
         flex-direction: row;
         gap: 0;
@@ -1129,39 +1121,31 @@ input, textarea { font-family: inherit; }
         gap: 2px;
     }
     .nav-item svg { width: 22px; height: 22px; }
-    .nav-badge { top: 6px; right: 50%; transform: translateX(50%); }
+    .nav-badge { top: 4px; right: 50%; transform: translateX(16px); }
 
     /* 手机端显示返回按钮 */
     .chat-back-btn { display: flex; }
 
-    /* 手机端主内容区域 - 使用 dvh 避免键盘遮挡 */
+    /* 手机端主内容区域 */
     .main-app {
         flex-direction: column;
-        height: 100vh;
         height: 100dvh;
     }
     .content-area {
         flex: 1;
-        height: calc(100vh - 56px);
         height: calc(100dvh - 56px);
         position: relative;
         overflow: hidden;
     }
 
-    /* 聊天列表面板全宽 */
+    /* 聊天列表面板 */
     .list-panel {
         width: 100%;
         height: 100%;
         border-right: none;
     }
 
-    /* 手机端聊天详情打开时，隐藏聊天列表 */
-    .detail-panel.active ~ .list-panel,
-    body.chat-open .list-panel {
-        display: none;
-    }
-
-    /* 聊天详情面板全屏 - 固定在内容区域内 */
+    /* 聊天详情面板 - 全屏覆盖 */
     .detail-panel {
         position: absolute;
         inset: 0;
@@ -1169,59 +1153,75 @@ input, textarea { font-family: inherit; }
         height: 100%;
         display: flex;
         flex-direction: column;
-        /* 手机端确保底部输入区域不被nav遮挡 */
         padding-bottom: 56px;
     }
-    .detail-panel.hidden {
-        display: none;
-    }
+    .detail-panel.hidden { display: none; }
 
-    /* 消息气泡更宽 */
-    .msg-row { max-width: 85%; }
-
-    /* 认证页面适配 */
-    .auth-container { padding: 24px 20px; }
-    .auth-logo h1 { font-size: 22px; }
-    .logo-icon { font-size: 36px; }
+    /* 认证页面 */
+    .auth-container { padding: 28px 20px; width: 100%; max-width: 100%; border-radius: 0; min-height: 100dvh; }
+    .auth-logo h1 { font-size: 24px; }
+    .logo-icon { font-size: 40px; }
 
     /* 面板头部 */
-    .panel-header { padding: 12px 16px; }
-    .panel-header h2 { font-size: 16px; }
+    .panel-header { padding: 12px 14px; }
+    .panel-header h2 { font-size: 17px; }
+
+    /* 搜索框 */
+    .search-box { padding: 10px 14px; }
+    .search-box input { padding: 10px 12px; font-size: 15px; }
+
+    /* 聊天列表项 */
+    .chat-item { padding: 14px 14px; }
+    .chat-avatar { width: 46px; height: 46px; font-size: 18px; }
+    .chat-info { margin-left: 10px; }
+    .chat-name { font-size: 16px; }
+    .chat-last-msg { font-size: 13px; }
+    .chat-meta { margin-left: 6px; }
+    .chat-time { font-size: 11px; }
 
     /* 聊天头部 */
-    .chat-header { padding: 10px 12px; flex-shrink: 0; }
-    .chat-header-name { font-size: 15px; }
+    .chat-header { padding: 10px 12px; flex-shrink: 0; gap: 8px; }
+    .chat-header-name { font-size: 16px; }
+    .chat-header-status { font-size: 11px; }
 
-    /* 消息区域 - 给输入框留足够空间 */
+    /* 消息区域 */
     .messages-area {
-        padding: 10px 12px;
+        padding: 12px 10px;
         flex: 1;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         min-height: 0;
+        gap: 10px;
     }
 
-    /* 输入框区域 - 确保始终可见可点击 */
+    /* 消息气泡 */
+    .msg-row { max-width: 82%; }
+    .msg-avatar { width: 30px; height: 30px; font-size: 13px; flex-shrink: 0; }
+    .msg-bubble { padding: 10px 13px; font-size: 15px; line-height: 1.5; border-radius: 14px; }
+    .msg-row.self .msg-bubble { border-bottom-right-radius: 4px; }
+    .msg-row.other .msg-bubble { border-bottom-left-radius: 4px; }
+    .msg-time { font-size: 10px; margin-top: 2px; }
+
+    /* 输入区域 */
     .chat-input-area {
-        padding: 8px 12px;
+        padding: 8px 10px;
         padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
         flex-shrink: 0;
         background: var(--card-bg);
         border-top: 1px solid var(--border);
         position: relative;
         z-index: 30;
+        gap: 6px;
     }
     .chat-input {
-        font-size: 16px; /* 防止 iOS 自动缩放 */
-        min-height: 36px;
+        font-size: 16px;
+        min-height: 38px;
         max-height: 100px;
+        padding: 10px 14px;
+        border-radius: 20px;
     }
-    .chat-tool-btn {
-        width: 32px; height: 32px;
-    }
-    .chat-send-btn {
-        width: 36px; height: 36px;
-    }
+    .chat-tool-btn { width: 34px; height: 34px; }
+    .chat-send-btn { width: 38px; height: 38px; }
 
     /* 表情面板 */
     .emoji-panel {
@@ -1233,57 +1233,139 @@ input, textarea { font-family: inherit; }
         border-radius: var(--radius) var(--radius) 0 0;
     }
 
-    /* Modal 全屏 */
+    /* Modal 移动端适配 */
     .modal {
         width: 100%;
         max-width: 100%;
-        max-height: 90vh;
-        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        max-height: 85vh;
+        border-radius: 16px 16px 0 0;
         margin-top: auto;
     }
-    .modal-overlay {
-        align-items: flex-end;
-    }
+    .modal-overlay { align-items: flex-end; }
+    .modal-header { padding: 14px 16px; }
+    .modal-header h3 { font-size: 16px; }
+    .modal-body { padding: 16px; }
+    .modal-footer { padding: 10px 16px; }
 
-    /* 动态卡片 */
-    .moment-card { padding: 12px; }
-    .moment-images { grid-template-columns: repeat(3, 1fr); gap: 4px; }
-
-    /* 管理员统计 */
-    .admin-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    /* 通讯录 */
+    .contact-item { padding: 14px 14px; }
+    .contact-avatar { width: 44px; height: 44px; font-size: 17px; }
+    .contact-info { margin-left: 10px; }
+    .contact-name { font-size: 16px; }
+    .contact-bio { font-size: 12px; }
 
     /* 发现页 */
-    .discover-content { padding: 12px; }
+    .discover-content { padding: 10px; }
+    .discover-user-card { padding: 12px 14px; }
+    .discover-user-avatar { width: 46px; height: 46px; font-size: 18px; }
+    .discover-user-name { font-size: 16px; }
+    .discover-user-bio { font-size: 12px; }
 
-    /* Toast 位置 */
-    .toast-container { top: auto; bottom: 70px; right: 12px; left: 12px; }
-    .toast { min-width: auto; }
+    /* 动态卡片 */
+    .moment-card { padding: 14px; margin-bottom: 12px; }
+    .moment-header { gap: 8px; }
+    .moment-avatar { width: 42px; height: 42px; font-size: 17px; }
+    .moment-name { font-size: 15px; }
+    .moment-content { font-size: 15px; line-height: 1.6; }
+    .moment-images { grid-template-columns: repeat(3, 1fr); gap: 4px; border-radius: 6px; }
+    .moment-images img { border-radius: 6px; }
+    .moment-actions { gap: 12px; padding-top: 10px; }
+
+    /* 管理 */
+    .admin-tabs { padding: 0 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .admin-tab { padding: 12px 14px; font-size: 14px; white-space: nowrap; }
+    .admin-content { padding: 12px; }
+    .admin-stats-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .admin-stat-card { padding: 14px 12px; }
+    .admin-stat-value { font-size: 22px; }
+    .admin-stat-label { font-size: 12px; }
+
+    /* 用户主页 */
+    .profile-header-area { padding: 20px 14px; }
+    .profile-big-avatar { width: 72px; height: 72px; font-size: 28px; }
+    .profile-name { font-size: 18px; }
+    .profile-bio { font-size: 13px; }
+
+    /* 打赏页 */
+    .donation-content { padding: 16px 12px; }
+    .donation-qr-img { max-width: 160px; }
+
+    /* 反馈面板 */
+    .feedbacks-list { padding: 10px; }
+    .feedback-card { padding: 12px; margin-bottom: 10px; }
+
+    /* Toast */
+    .toast-container { top: auto; bottom: 70px; right: 10px; left: 10px; }
+    .toast { min-width: auto; font-size: 13px; padding: 10px 16px; }
+
+    /* 按钮 */
+    .btn-primary { padding: 10px 20px; font-size: 14px; }
+    .btn-sm { padding: 7px 14px; font-size: 13px; }
+    .btn-secondary { padding: 8px 16px; font-size: 13px; }
+
+    /* 隐藏 title 属性 tooltip */
+    [title] { position: relative; }
 }
 
 /* 小屏幕手机（360px - 380px） */
 @media (max-width: 380px) {
-    .sidebar { height: 48px; }
+    .sidebar { height: 48px; padding: 0 2px; }
+    .nav-item { height: 48px; }
     .nav-item svg { width: 18px; height: 18px; }
     .sidebar-btn { height: 48px; }
-    .sidebar-btn svg { width: 18px; height: 18px; }
+    .sidebar-btn svg { width: 17px; height: 17px; }
     .sidebar-btn-label { font-size: 9px; }
     .checkin-mobile-btn { height: 48px; }
     .sidebar-bottom .feedback-btn { height: 48px; font-size: 9px; }
-    .sidebar-bottom .feedback-btn svg { width: 20px; height: 20px; }
+    .sidebar-bottom .feedback-btn svg { width: 18px; height: 18px; }
     .content-area { height: calc(100dvh - 48px); }
     .detail-panel { padding-bottom: 48px; }
-    .auth-container { padding: 20px 16px; }
-    .msg-row { max-width: 92%; }
-    .chat-input-area { padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom, 6px)); }
-    .chat-input { min-height: 32px; font-size: 15px; padding: 8px 10px; }
-    .chat-tool-btn { width: 30px; height: 30px; }
-    .chat-send-btn { width: 32px; height: 32px; }
+
+    .auth-container { padding: 20px 14px; }
+    .auth-logo h1 { font-size: 20px; }
+    .logo-icon { font-size: 32px; }
+    .auth-tab { padding: 8px 14px; font-size: 14px; }
+    .auth-form input { padding: 10px 12px; font-size: 15px; }
+
+    .panel-header { padding: 10px 12px; }
+    .panel-header h2 { font-size: 16px; }
+
+    .chat-item { padding: 10px 12px; }
+    .chat-avatar { width: 40px; height: 40px; font-size: 16px; }
+    .chat-name { font-size: 14px; }
+    .chat-last-msg { font-size: 12px; }
+
     .chat-header { padding: 8px 10px; }
     .chat-header-name { font-size: 14px; }
-    .msg-bubble { padding: 8px 12px; font-size: 14px; }
-    /* 登录框更紧凑 */
-    .auth-tab { padding: 8px 16px; font-size: 14px; }
-    .auth-form input { padding: 10px 14px; font-size: 15px; }
+    .messages-area { padding: 8px; gap: 8px; }
+    .msg-row { max-width: 88%; }
+    .msg-avatar { width: 26px; height: 26px; font-size: 12px; }
+    .msg-bubble { padding: 8px 11px; font-size: 14px; border-radius: 12px; }
+
+    .chat-input-area { padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom, 6px)); gap: 4px; }
+    .chat-input { min-height: 34px; font-size: 15px; padding: 8px 12px; }
+    .chat-tool-btn { width: 30px; height: 30px; }
+    .chat-send-btn { width: 34px; height: 34px; }
+
+    .btn-primary { padding: 8px 16px; font-size: 13px; }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    .modal-header h3 { font-size: 15px; }
+    .moment-card { padding: 10px; }
+    .moment-avatar { width: 36px; height: 36px; font-size: 15px; }
+    .moment-content { font-size: 14px; }
+    .moment-name { font-size: 14px; }
+    .discover-user-card { padding: 10px 12px; }
+    .discover-user-avatar { width: 40px; height: 40px; font-size: 16px; }
+    .discover-user-name { font-size: 14px; }
+    .contact-item { padding: 12px; }
+    .contact-avatar { width: 40px; height: 40px; font-size: 16px; }
+    .contact-name { font-size: 14px; }
+    .admin-user-card { padding: 10px; }
+    .admin-user-name { font-size: 14px; }
+    .bubble-item { padding: 8px 10px; gap: 8px; }
+    .bubble-preview { min-width: 56px; }
+    .bubble-name { font-size: 12px; }
 }
 
 /* ========== 反馈/设置 按钮 ========== */
@@ -1389,63 +1471,136 @@ input, textarea { font-family: inherit; }
 
 /* ========== 聊天气泡风格 ========== */
 
-/* 0 — 默认（免费） */
+/* 0 — 经典白色（免费） */
 .msg-bubble.bubble-default {
     background: linear-gradient(135deg, #f0f0f0, #fafafa);
     color: var(--text); border: 1px solid var(--border);
 }
 .msg-row.self .msg-bubble.bubble-default {
-    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    background: linear-gradient(135deg, var(--primary), #764ba2);
     color: #fff; border: none;
 }
 
-/* 1 — 薄荷绿 (100积分) */
+/* 1 — 薄荷清风 (30积分) */
 .msg-bubble.bubble-mint { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); color: #2e7d32; border: 1px solid #a5d6a7; }
 .msg-row.self .msg-bubble.bubble-mint { background: linear-gradient(135deg, #43a047, #66bb6a); color: #fff; border: none; }
 
-/* 2 — 紫罗兰 (300积分) */
-.msg-bubble.bubble-purple { background: linear-gradient(135deg, #f3e5f5, #e1bee7); color: #6a1b9a; border: 1px solid #ce93d8; }
-.msg-row.self .msg-bubble.bubble-purple { background: linear-gradient(135deg, #8e24aa, #ab47bc); color: #fff; border: none; }
+/* 2 — 星空紫韵 (60积分) */
+.msg-bubble.bubble-purple { background: linear-gradient(135deg, #ede7f6, #d1c4e9); color: #4a148c; border: 1px solid #b39ddb; }
+.msg-row.self .msg-bubble.bubble-purple { background: linear-gradient(135deg, #7c4dff, #b388ff); color: #fff; border: none; }
 
-/* 3 — 日落橙 (600积分) */
-.msg-bubble.bubble-sunset { background: linear-gradient(135deg, #fff3e0, #ffe0b2); color: #e65100; border: 1px solid #ffcc80; }
-.msg-row.self .msg-bubble.bubble-sunset { background: linear-gradient(135deg, #ff6d00, #ff9100); color: #fff; border: none; }
-
-/* 4 — 极光渐变 (1000积分) */
-.msg-bubble.bubble-aurora {
-    background: linear-gradient(135deg, #e0f7fa, #b2ebf2, #f3e5f5);
-    color: #0d47a1; border: 1px solid #80deea;
+/* 3 — 樱花轻语 (120积分) */
+.msg-bubble.bubble-sakura {
+    background: linear-gradient(135deg, #fce4ec, #f8bbd0);
+    color: #880e4f; border: 1px solid #f48fb1;
+    box-shadow: 0 2px 8px rgba(244,143,177,0.2);
 }
-.msg-row.self .msg-bubble.bubble-aurora {
-    background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
+.msg-row.self .msg-bubble.bubble-sakura {
+    background: linear-gradient(135deg, #ec407a, #f06292);
     color: #fff; border: none;
+}
+
+/* 4 — 皇冠王者 👑 (180积分) - 最高级气泡 */
+.msg-bubble.bubble-crown {
+    background: linear-gradient(135deg, #fff8e1, #ffecb3, #ffe082);
+    color: #e65100;
+    border: 2px solid #ffb300;
+    box-shadow: 0 0 12px rgba(255,179,0,0.3), 0 2px 8px rgba(0,0,0,0.1);
+    position: relative;
+    overflow: visible;
+}
+.msg-bubble.bubble-crown::before {
+    content: '👑';
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 20px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.2));
+    animation: crown-bounce 2s ease-in-out infinite;
+    z-index: 5;
+}
+.msg-bubble.bubble-crown::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 19px;
+    border: 2px dashed #ffb300;
+    opacity: 0.5;
+    pointer-events: none;
+}
+@keyframes crown-bounce {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(-3px); }
+}
+.msg-row.self .msg-bubble.bubble-crown {
+    background: linear-gradient(135deg, #f7971e, #ffd200);
+    color: #4a2800;
+    border: 2px solid #ff8f00;
+    box-shadow: 0 0 14px rgba(255,141,0,0.4), 0 2px 10px rgba(0,0,0,0.15);
+}
+.msg-row.self .msg-bubble.bubble-crown::before {
+    content: '👑';
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 20px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+    animation: crown-bounce 2s ease-in-out infinite;
+    z-index: 5;
 }
 
 /* ========== 气泡商城 ========== */
 
-.bubble-shop-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 12px; padding: 8px 0;
+.bubble-grid {
+    display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto;
+    padding: 4px;
 }
-.bubble-shop-item {
-    border: 2px solid var(--border); border-radius: 12px; padding: 16px 12px;
-    text-align: center; cursor: pointer; transition: var(--transition);
-    background: #fff; position: relative;
+.bubble-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border: 2px solid var(--border); border-radius: 12px; background: #fff;
+    transition: var(--transition);
 }
-.bubble-shop-item:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow); }
-.bubble-shop-item.owned { border-color: #43e97b; }
-.bubble-shop-item.owned::after {
-    content: '✅ 已拥有'; position: absolute; top: 6px; right: 8px;
-    font-size: 10px; color: #43e97b; font-weight: 600;
+.bubble-item:hover { border-color: var(--primary); }
+.bubble-item.equipped { border-color: var(--primary); background: #f0f4ff; }
+.bubble-preview {
+    min-width: 64px; padding: 8px 4px; border-radius: 10px; text-align: center;
+    position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.bubble-shop-preview {
-    width: 100%; padding: 10px; border-radius: 8px; margin-bottom: 8px;
-    font-size: 12px; min-height: 40px; display: flex; align-items: center; justify-content: center;
+.bubble-preview-icon { font-size: 20px; }
+.bubble-preview-msg {
+    display: inline-block; padding: 5px 10px; border-radius: 12px;
+    color: #fff; font-size: 11px; font-weight: 500; white-space: nowrap;
 }
-.bubble-shop-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
-.bubble-shop-price { font-size: 12px; color: #f5576c; font-weight: 700; }
-.bubble-shop-price .free { color: #43e97b; }
-.bubble-shop-current { font-size: 11px; color: var(--primary); font-weight: 600; }
+.bubble-crown-badge {
+    font-size: 16px; position: absolute; top: -5px; right: -3px;
+    animation: crown-bounce 2s ease-in-out infinite;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15));
+}
+.bubble-info { flex: 1; min-width: 0; }
+.bubble-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.bubble-desc { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.bubble-price-row {
+    display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; align-items: center;
+}
+.bubble-price {
+    font-size: 11px; color: #f5576c; font-weight: 700;
+    background: #fff0f3; padding: 2px 7px; border-radius: 10px;
+}
+.bubble-price.free { color: #43e97b; background: #e8f5e9; }
+.bubble-price-day {
+    font-size: 10px; color: #ff8a65; font-weight: 600;
+    background: #fff3e0; padding: 2px 7px; border-radius: 10px;
+}
+.bubble-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    font-weight: 600; margin-top: 3px;
+}
+.bubble-badge.equipped { background: #d4edda; color: #155724; }
+.bubble-badge.owned { background: #e3f2fd; color: #1565c0; }
+.bubble-badge.day { background: #fff3e0; color: #e65100; }
+.bubble-actions { display: flex; gap: 4px; flex-shrink: 0; align-items: center; }
 
 /* ========== 个人主页 ========== */
 
@@ -1546,39 +1701,6 @@ input, textarea { font-family: inherit; }
     font-size: 13px; color: #f5576c; font-weight: 600; margin-bottom: 12px;
     text-align: center;
 }
-
-/* ========== 气泡商城模态框内样式 ========== */
-
-.bubble-grid {
-    display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto;
-    padding: 4px;
-}
-.bubble-item {
-    display: flex; align-items: center; gap: 12px; padding: 12px;
-    border: 2px solid var(--border); border-radius: 12px; background: #fff;
-    transition: var(--transition);
-}
-.bubble-item:hover { border-color: var(--primary); }
-.bubble-item.equipped { border-color: var(--primary); background: #f0f4ff; }
-.bubble-preview {
-    min-width: 80px; padding: 8px; border-radius: 10px; text-align: center;
-    font-size: 11px;
-}
-.bubble-preview-msg {
-    display: inline-block; padding: 8px 14px; border-radius: 12px;
-    color: #fff; font-size: 12px; font-weight: 500;
-}
-.bubble-info { flex: 1; min-width: 0; }
-.bubble-name { font-size: 13px; font-weight: 600; color: var(--text); }
-.bubble-desc { font-size: 11px; color: var(--text-light); margin-top: 2px; }
-.bubble-price { font-size: 12px; color: #f5576c; font-weight: 600; margin-top: 2px; }
-.bubble-badge {
-    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
-    font-weight: 600; margin-top: 4px;
-}
-.bubble-badge.equipped { background: #d4edda; color: #155724; }
-.bubble-badge.owned { background: #e3f2fd; color: #1565c0; }
-.bubble-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* ========== 个人主页 stats ========== */
 
