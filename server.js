@@ -185,6 +185,10 @@ app.post('/api/login', (req, res) => {
     if (user.banned) return res.status(403).json({ error: '账号已被封禁，请联系管理员' });
     if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: '密码错误' });
 
+    // Auto-check and revert expired bubble
+    cleanupExpiredBubble(user);
+    saveJSON('users.json', users);
+
     res.json({
         success: true,
         token: user.id,
@@ -207,6 +211,14 @@ app.post('/api/login', (req, res) => {
 // Get current user info
 app.get('/api/me', authMiddleware, (req, res) => {
     const user = req.user;
+    // Auto-check expired bubble
+    const users = loadJSON('users.json');
+    const liveUser = users.find(u => u.id === user.id);
+    if (liveUser) {
+        cleanupExpiredBubble(liveUser);
+        saveJSON('users.json', users);
+        liveUser.bubbleStyle = liveUser.bubbleStyle || 0;
+    }
     res.json({
         id: user.id,
         username: user.username,
@@ -218,7 +230,7 @@ app.get('/api/me', authMiddleware, (req, res) => {
         role: user.role,
         points: user.points || 0,
         lastCheckinDate: user.lastCheckinDate || null,
-        bubbleStyle: user.bubbleStyle || 0,
+        bubbleStyle: liveUser ? liveUser.bubbleStyle : (user.bubbleStyle || 0),
         createdAt: user.createdAt
     });
 });
@@ -750,12 +762,24 @@ app.post('/api/checkin', authMiddleware, (req, res) => {
 
 // ========== Bubble Shop (气泡商城) ==========
 
+// Clean up expired bubble style for a user
+function cleanupExpiredBubble(user) {
+    if (user.bubbleStyle && user.bubbleStyle !== 0 && user.bubblePurchases) {
+        const purchase = user.bubblePurchases[user.bubbleStyle];
+        if (purchase && purchase !== 'permanent' && typeof purchase === 'number' && purchase <= Date.now()) {
+            // Expired: revert to default
+            delete user.bubblePurchases[user.bubbleStyle];
+            user.bubbleStyle = 0;
+        }
+    }
+}
+
 const BUBBLE_STYLES = [
     { id: 0, name: '经典白色', price: 0, class: 'bubble-default', desc: '默认聊天气泡' },
-    { id: 1, name: '薄荷绿', price: 100, class: 'bubble-mint', desc: '清新薄荷渐变' },
-    { id: 2, name: '星空紫', price: 300, class: 'bubble-purple', desc: '深邃星空渐变' },
-    { id: 3, name: '日落橙', price: 600, class: 'bubble-sunset', desc: '温暖日落余晖' },
-    { id: 4, name: '极光幻彩', price: 1000, class: 'bubble-aurora', desc: '绚丽极光变幻' }
+    { id: 1, name: '薄荷清风', price: 30, class: 'bubble-mint', desc: '清新薄荷渐变' },
+    { id: 2, name: '星空紫韵', price: 60, class: 'bubble-purple', desc: '深邃星空渐变' },
+    { id: 3, name: '樱花轻语', price: 120, class: 'bubble-sakura', desc: '浪漫樱花飘落' },
+    { id: 4, name: '皇冠王者 👑', price: 180, class: 'bubble-crown', desc: '尊贵皇冠装饰特效' }
 ];
 
 app.get('/api/bubbles', authMiddleware, (req, res) => {
@@ -764,37 +788,82 @@ app.get('/api/bubbles', authMiddleware, (req, res) => {
     const userBubbleStyle = user.bubbleStyle || 0;
     const isAdmin = user.role === 'super_admin' || user.role === 'admin';
 
-    const bubbles = BUBBLE_STYLES.map(b => ({
-        ...b,
-        owned: isAdmin || b.id === 0 || b.id === userBubbleStyle,
-        equipped: b.id === userBubbleStyle,
-        canAfford: isAdmin || (user.points || 0) >= b.price
-    }));
+    const bubbles = BUBBLE_STYLES.map(b => {
+        let owned = isAdmin || b.id === 0;
+        let expiresAt = null;
+        let isDay = false;
+
+        if (!owned && user.bubblePurchases && user.bubblePurchases[b.id]) {
+            const purchase = user.bubblePurchases[b.id];
+            if (purchase === 'permanent') {
+                owned = true;
+                isDay = false;
+            } else if (typeof purchase === 'number') {
+                if (purchase > Date.now()) {
+                    owned = true;
+                    expiresAt = purchase;
+                    isDay = true;
+                } else {
+                    // Clean up expired
+                    delete user.bubblePurchases[b.id];
+                }
+            }
+        }
+
+        return {
+            ...b,
+            owned,
+            equipped: b.id === userBubbleStyle,
+            canAfford: isAdmin || (user.points || 0) >= b.price,
+            expiresAt,
+            isDay
+        };
+    });
+
+    // Save cleaned up purchases
+    saveJSON('users.json', users);
 
     res.json(bubbles);
 });
 
 app.post('/api/bubbles/purchase', authMiddleware, (req, res) => {
-    const { bubbleId } = req.body;
+    const { bubbleId, duration } = req.body;  // duration: 'day' | 'permanent'
     const bubble = BUBBLE_STYLES.find(b => b.id === bubbleId);
     if (!bubble) return res.status(404).json({ error: '气泡不存在' });
 
     const users = loadJSON('users.json');
     const user = users.find(u => u.id === req.user.id);
 
+    // Calculate price based on duration
+    const isDay = duration === 'day';
+    const actualPrice = isDay ? Math.max(1, Math.floor(bubble.price * 0.3)) : bubble.price;
+
     // Admins get all free
     if (user.role !== 'super_admin' && user.role !== 'admin') {
-        if ((user.points || 0) < bubble.price) {
+        if ((user.points || 0) < actualPrice) {
             return res.status(400).json({ error: '积分不足' });
         }
-        user.points -= bubble.price;
+        user.points -= actualPrice;
+    }
+
+    // Initialize bubble purchases array
+    if (!user.bubblePurchases) user.bubblePurchases = {};
+
+    // Set expiry for 1-day purchase
+    if (isDay) {
+        const expiresAt = Date.now() + 24 * 60 * 60 * 1000;  // 24 hours
+        user.bubblePurchases[bubbleId] = expiresAt;
+    } else {
+        // Permanent purchase
+        user.bubblePurchases[bubbleId] = 'permanent';
     }
 
     // Update bubble style
     user.bubbleStyle = bubbleId;
     saveJSON('users.json', users);
 
-    res.json({ success: true, points: user.points, bubbleStyle: bubbleId, message: `已装备「${bubble.name}」气泡！` });
+    const durationText = isDay ? '（1天）' : '（永久）';
+    res.json({ success: true, points: user.points, bubbleStyle: bubbleId, message: `已装备「${bubble.name}」气泡${durationText}！` });
 });
 
 app.put('/api/bubbles/equip', authMiddleware, (req, res) => {
@@ -806,8 +875,25 @@ app.put('/api/bubbles/equip', authMiddleware, (req, res) => {
     const user = users.find(u => u.id === req.user.id);
     const isAdmin = user.role === 'super_admin' || user.role === 'admin';
 
-    // Only allow equip if owned (or admin)
-    if (!isAdmin && bubbleId !== 0 && user.bubbleStyle !== bubbleId) {
+    // Check if user owns this bubble (or admin, or default)
+    let owns = isAdmin || bubbleId === 0;
+    if (!owns && user.bubblePurchases && user.bubblePurchases[bubbleId]) {
+        const purchase = user.bubblePurchases[bubbleId];
+        if (purchase === 'permanent') {
+            owns = true;
+        } else if (typeof purchase === 'number') {
+            if (purchase > Date.now()) {
+                owns = true;
+            } else {
+                // Expired, clean up
+                delete user.bubblePurchases[bubbleId];
+                saveJSON('users.json', users);
+                return res.status(400).json({ error: '该气泡已过期，请重新兑换' });
+            }
+        }
+    }
+
+    if (!owns) {
         return res.status(400).json({ error: '你还没有购买这个气泡！请先兑换' });
     }
 
