@@ -66,6 +66,7 @@ if (loadJSON('groups.json').length === 0) {
 }
 if (loadJSON('moments.json').length === 0) saveJSON('moments.json', []);
 if (loadJSON('friendships.json').length === 0) saveJSON('friendships.json', []);
+if (loadJSON('feedbacks.json').length === 0) saveJSON('feedbacks.json', []);
 
 // ========== Middleware ==========
 
@@ -733,7 +734,80 @@ app.get('/api/admin/stats', adminMiddleware, (req, res) => {
     });
 });
 
-// ========== Socket.IO - Real-time Communication ==========
+// ========== Feedback API ==========
+
+app.post('/api/feedback', authMiddleware, (req, res) => {
+    const { content } = req.body;
+    if (!content || content.trim().length < 2) {
+        return res.status(400).json({ error: '反馈内容至少2个字符' });
+    }
+
+    const feedbacks = loadJSON('feedbacks.json');
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.userId);
+
+    const feedback = {
+        id: 'fb_' + Date.now(),
+        userId: req.userId,
+        nickname: user ? user.nickname : '未知用户',
+        avatarColor: user ? user.avatarColor : '#999',
+        avatarText: user ? user.avatarText : '?',
+        content: content.trim(),
+        status: 'pending',
+        createdAt: Date.now()
+    };
+
+    feedbacks.push(feedback);
+    saveJSON('feedbacks.json', feedbacks);
+
+    // Notify admin sockets
+    const sockets = io.sockets.sockets;
+    for (const [sid, socket] of sockets) {
+        if (socket.role === 'admin') {
+            socket.emit('new-feedback', feedback);
+        }
+    }
+
+    res.json({ success: true, id: feedback.id });
+});
+
+app.get('/api/admin/feedbacks', adminMiddleware, (req, res) => {
+    const feedbacks = loadJSON('feedbacks.json');
+    feedbacks.sort((a, b) => b.createdAt - a.createdAt);
+    res.json(feedbacks);
+});
+
+app.post('/api/admin/feedback/:feedbackId/resolve', adminMiddleware, (req, res) => {
+    const feedbacks = loadJSON('feedbacks.json');
+    const fb = feedbacks.find(f => f.id === req.params.feedbackId);
+    if (!fb) return res.status(404).json({ error: '反馈不存在' });
+    fb.status = fb.status === 'resolved' ? 'pending' : 'resolved';
+    saveJSON('feedbacks.json', feedbacks);
+    res.json({ success: true, status: fb.status });
+});
+
+// ========== Admin: Promote user to admin ==========
+
+app.post('/api/admin/promote/:userId', adminMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.params.userId);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
+    if (user.role === 'admin') return res.json({ success: true, message: '该用户已是管理员' });
+
+    user.role = 'admin';
+    saveJSON('users.json', users);
+
+    // Notify the promoted user
+    const sockets = io.sockets.sockets;
+    for (const [sid, socket] of sockets) {
+        if (socket.userId === user.id) {
+            socket.emit('promoted', { message: '你已被提升为管理员！' });
+            socket.role = 'admin';
+        }
+    }
+
+    res.json({ success: true, message: `${user.nickname} 已提升为管理员` });
+});
 
 const onlineUsers = {}; // userId -> socketId
 
@@ -756,6 +830,7 @@ io.on('connection', (socket) => {
 
         socket.userId = user.id;
         socket.userNickname = user.nickname;
+        socket.role = user.role || 'user';
         onlineUsers[user.id] = socket.id;
 
         // Join user's groups
