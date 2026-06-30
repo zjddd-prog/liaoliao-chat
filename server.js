@@ -5,26 +5,74 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
-const { pool, initTables } = require('./db');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*" },
-    maxHttpBufferSize: 5e6
+    maxHttpBufferSize: 5e6 // 5MB for image uploads
 });
 
 const PORT = process.env.PORT || 3000;
+const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 
+// Ensure directories exist
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// ========== Data Store (JSON files) ==========
+
+function loadJSON(filename) {
+    const filepath = path.join(DATA_DIR, filename);
+    if (!fs.existsSync(filepath)) return [];
+    try { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
+    catch { return []; }
+}
+
+function saveJSON(filename, data) {
+    fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(data, null, 2));
+}
+
+// Initialize data files if empty
+if (loadJSON('users.json').length === 0) {
+    const defaultUsers = [
+        {
+            id: 'u_system',
+            username: 'system',
+            password: bcrypt.hashSync('system', 10),
+            nickname: '系统通知',
+            bio: '聊聊官方系统通知',
+            avatarColor: '#667eea',
+            avatarText: '聊',
+            role: 'system',
+            banned: false,
+            createdAt: Date.now() - 86400000 * 365
+        }
+    ];
+    saveJSON('users.json', defaultUsers);
+}
+if (loadJSON('messages.json').length === 0) saveJSON('messages.json', []);
+if (loadJSON('groups.json').length === 0) {
+    saveJSON('groups.json', [{
+        id: 'g_public',
+        name: '聊聊大厅',
+        description: '所有人都在这里聊天！',
+        avatarColor: '#667eea',
+        avatarText: '厅',
+        members: [],
+        createdAt: Date.now()
+    }]);
+}
+if (loadJSON('moments.json').length === 0) saveJSON('moments.json', []);
+if (loadJSON('friendships.json').length === 0) saveJSON('friendships.json', []);
 
 // ========== Middleware ==========
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
-app.set('trust proxy', 1);
 
+// Multer for image uploads
 const storage = multer.diskStorage({
     destination: UPLOADS_DIR,
     filename: (req, file, cb) => {
@@ -34,89 +82,29 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
+    limits: { fileSize: 3 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (/image\/.*/.test(file.mimetype)) cb(null, true);
         else cb(new Error('Only images allowed'), false);
     }
 });
 
-// ========== Helpers ==========
+// ========== Auth Helper ==========
 
-function genId(prefix) {
-    return (prefix || 'x') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-}
-
-// 简单频率限制器（内存）
-const rateLimiter = {};
-function checkRateLimit(key, cooldownMs = 2000) {
-    const now = Date.now();
-    const last = rateLimiter[key] || 0;
-    if (now - last < cooldownMs) return false;
-    rateLimiter[key] = now;
-    return true;
-}
-
-function cleanupExpiredBubble(user) {
-    if (user.bubble_style && user.bubble_style !== 0 && user.bubble_purchases) {
-        const purchase = user.bubble_purchases[String(user.bubble_style)];
-        if (purchase && purchase !== 'permanent' && typeof purchase === 'number' && purchase <= Date.now()) {
-            delete user.bubble_purchases[String(user.bubble_style)];
-            user.bubble_style = 0;
-            return true;
-        }
-    }
-    return false;
-}
-
-function userToJSON(u) {
-    if (!u) return null;
-    return {
-        id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-        avatarColor: u.avatar_color, avatarText: u.avatar_text,
-        avatarUrl: u.avatar_url || null, role: u.role,
-        birthday: u.birthday || '', gender: u.gender || '',
-        points: u.points || 0, lastCheckinDate: u.last_checkin_date || null,
-        bubbleStyle: u.bubble_style || 0, createdAt: u.created_at,
-        banned: u.banned || false, mutedUntil: u.muted_until || null
-    };
-}
-
-const BUBBLE_STYLES = [
-    { id: 0, name: '晴空万里', price: 0, class: 'bubble-sky', desc: '广阔蓝天白云飘' },
-    { id: 1, name: '云霄巡航', price: 30, class: 'bubble-cloud', desc: '穿行于云层之上' },
-    { id: 2, name: '落日飞行', price: 60, class: 'bubble-sunset', desc: '暮色中的金色航线' },
-    { id: 3, name: '星辰航线', price: 120, class: 'bubble-stars', desc: '星空下闪耀的航迹' },
-    { id: 4, name: '王牌机长', price: 180, class: 'bubble-captain', desc: '金翼勋章·至尊荣耀' }
-];
-
-// ========== Auth Middleware ==========
-
-async function authMiddleware(req, res, next) {
+function authMiddleware(req, res, next) {
     const token = req.headers.authorization;
     if (!token) return res.status(401).json({ error: '未登录' });
-    try {
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [token]);
-        if (r.rows.length === 0) return res.status(401).json({ error: '无效token' });
-        const user = r.rows[0];
-        if (user.banned) return res.status(403).json({ error: '账号已被封禁' });
-        req.user = user;
-        next();
-    } catch (e) {
-        res.status(500).json({ error: '服务器错误' });
-    }
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === token);
+    if (!user) return res.status(401).json({ error: '无效token' });
+    if (user.banned) return res.status(403).json({ error: '账号已被封禁' });
+    req.user = user;
+    next();
 }
 
 function adminMiddleware(req, res, next) {
     authMiddleware(req, res, () => {
-        if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: '需要管理员权限' });
-        next();
-    });
-}
-
-function superAdminMiddleware(req, res, next) {
-    authMiddleware(req, res, () => {
-        if (req.user.role !== 'super_admin') return res.status(403).json({ error: '需要超级管理员权限' });
+        if (req.user.role !== 'admin') return res.status(403).json({ error: '需要管理员权限' });
         next();
     });
 }
@@ -124,558 +112,367 @@ function superAdminMiddleware(req, res, next) {
 // ========== API Routes ==========
 
 // Register
-app.post('/api/register', async (req, res) => {
-    try {
-        const { username, password, nickname, bio, birthday, gender } = req.body;
-        const ip = req.ip || req.connection.remoteAddress;
-        if (!checkRateLimit('reg_' + ip, 3000)) {
-            return res.status(429).json({ error: '注册太频繁，请稍后再试' });
-        }
-        if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' });
-        if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名2-20字符' });
-        if (password.length < 4) return res.status(400).json({ error: '密码至少4位' });
+app.post('/api/register', (req, res) => {
+    const { username, password, nickname, bio } = req.body;
+    if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' });
+    if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名2-20字符' });
+    if (password.length < 4) return res.status(400).json({ error: '密码至少4位' });
 
-        const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
-        if (existing.rows.length > 0) return res.status(400).json({ error: '用户名已存在' });
+    const users = loadJSON('users.json');
+    if (users.find(u => u.username === username)) return res.status(400).json({ error: '用户名已存在' });
 
-        const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#a18cd1', '#fbc2eb'];
-        const uid = genId('u');
-        const nick = nickname || username;
-        const hashedPw = bcrypt.hashSync(password, 10);
-        const avatarColor = colors[Math.floor(Math.random() * colors.length)];
-        const avatarText = nick.slice(0, 1).toUpperCase();
-        const now = Date.now();
+    const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#a18cd1', '#fbc2eb'];
+    const newUser = {
+        id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+        username,
+        password: bcrypt.hashSync(password, 10),
+        nickname: nickname || username,
+        bio: bio || '',
+        avatarColor: colors[Math.floor(Math.random() * colors.length)],
+        avatarText: (nickname || username).slice(0, 1).toUpperCase(),
+        role: 'user',
+        banned: false,
+        createdAt: Date.now()
+    };
+    users.push(newUser);
+    saveJSON('users.json', users);
 
-        await pool.query(
-            'INSERT INTO users (id, username, password, nickname, bio, birthday, gender, avatar_color, avatar_text, role, points, bubble_style, banned, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
-            [uid, username, hashedPw, nick, bio || '', birthday || '', gender || '', avatarColor, avatarText, 'user', 0, 0, false, now]
-        );
-
-        // Auto-add to public group
-        const pubGroup = await pool.query("SELECT * FROM groups_t WHERE id = 'g_public'");
-        if (pubGroup.rows.length > 0) {
-            await pool.query(
-                "UPDATE groups_t SET members = CASE WHEN NOT members @> $1::jsonb THEN members || $1::jsonb ELSE members END WHERE id = 'g_public'",
-                [JSON.stringify([uid])]
-            );
-        }
-
-        res.json({
-            success: true,
-            token: uid,
-            user: { id: uid, username, nickname: nick, bio: bio || '', birthday: birthday || '', gender: gender || '', avatarColor, avatarText, role: 'user', points: 0, lastCheckinDate: null, bubbleStyle: 0, createdAt: now }
-        });
-    } catch (e) {
-        res.status(500).json({ error: '注册失败: ' + e.message });
+    // Auto-add to public group
+    const groups = loadJSON('groups.json');
+    const pubGroup = groups.find(g => g.id === 'g_public');
+    if (pubGroup && !pubGroup.members.includes(newUser.id)) {
+        pubGroup.members.push(newUser.id);
+        saveJSON('groups.json', groups);
     }
+
+    res.json({
+        success: true,
+        token: newUser.id,
+        user: {
+            id: newUser.id,
+            username: newUser.username,
+            nickname: newUser.nickname,
+            bio: newUser.bio,
+            avatarColor: newUser.avatarColor,
+            avatarText: newUser.avatarText,
+            role: newUser.role,
+            createdAt: newUser.createdAt
+        }
+    });
 });
 
 // Login
-app.post('/api/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        const ip = req.ip || req.connection.remoteAddress;
-        if (!checkRateLimit('login_' + ip, 1000)) {
-            return res.status(429).json({ error: '操作太频繁，请稍后再试' });
-        }
-        const r = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
-        if (r.rows.length === 0) return res.status(400).json({ error: '用户名不存在' });
-        const user = r.rows[0];
-        if (user.banned) return res.status(403).json({ error: '账号已被封禁，请联系管理员' });
-        if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: '密码错误' });
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.username === username);
+    if (!user) return res.status(400).json({ error: '用户名不存在' });
+    if (user.banned) return res.status(403).json({ error: '账号已被封禁，请联系管理员' });
+    if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: '密码错误' });
 
-        if (cleanupExpiredBubble(user)) {
-            await pool.query(
-                'UPDATE users SET bubble_style = $1, bubble_purchases = $2 WHERE id = $3',
-                [user.bubble_style, JSON.stringify(user.bubble_purchases), user.id]
-            );
+    res.json({
+        success: true,
+        token: user.id,
+        user: {
+            id: user.id,
+            username: user.username,
+            nickname: user.nickname,
+            bio: user.bio,
+            avatarColor: user.avatarColor,
+            avatarText: user.avatarText,
+            role: user.role,
+            createdAt: user.createdAt
         }
-
-        res.json({ success: true, token: user.id, user: userToJSON(user) });
-    } catch (e) {
-        res.status(500).json({ error: '登录失败: ' + e.message });
-    }
+    });
 });
 
 // Get current user info
-app.get('/api/me', authMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
-        const user = r.rows[0];
-        if (cleanupExpiredBubble(user)) {
-            await pool.query(
-                'UPDATE users SET bubble_style = $1, bubble_purchases = $2 WHERE id = $3',
-                [user.bubble_style, JSON.stringify(user.bubble_purchases), user.id]
-            );
-        }
-        res.json(userToJSON(user));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+app.get('/api/me', authMiddleware, (req, res) => {
+    const user = req.user;
+    res.json({
+        id: user.id,
+        username: user.username,
+        nickname: user.nickname,
+        bio: user.bio,
+        avatarColor: user.avatarColor,
+        avatarText: user.avatarText,
+        role: user.role,
+        createdAt: user.createdAt
+    });
 });
 
 // Update profile
-app.put('/api/profile', authMiddleware, async (req, res) => {
-    try {
-        const { nickname, bio, birthday, gender } = req.body;
-        const updates = [];
-        const params = [];
-        let idx = 1;
+app.put('/api/profile', authMiddleware, (req, res) => {
+    const { nickname, bio } = req.body;
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
 
-        if (nickname) {
-            updates.push(`nickname = $${idx}, avatar_text = $${idx + 1}`);
-            params.push(nickname, nickname.slice(0, 1).toUpperCase());
-            idx += 2;
-        }
-        if (bio !== undefined) {
-            updates.push(`bio = $${idx}`);
-            params.push(bio);
-            idx += 1;
-        }
-        if (birthday !== undefined) {
-            updates.push(`birthday = $${idx}`);
-            params.push(birthday);
-            idx += 1;
-        }
-        if (gender !== undefined) {
-            updates.push(`gender = $${idx}`);
-            params.push(gender);
-            idx += 1;
-        }
+    if (nickname) { user.nickname = nickname; user.avatarText = nickname.slice(0, 1).toUpperCase(); }
+    if (bio) user.bio = bio;
+    saveJSON('users.json', users);
 
-        if (updates.length > 0) {
-            params.push(req.user.id);
-            await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
-        }
-
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
-        const u = r.rows[0];
-        res.json({ success: true, user: userToJSON(u) });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    res.json({ success: true, user: { id: user.id, nickname: user.nickname, bio: user.bio, avatarColor: user.avatarColor, avatarText: user.avatarText } });
 });
 
 // Upload avatar
-app.post('/api/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ error: '请上传图片' });
-        const avatarUrl = `/uploads/${req.file.filename}`;
-        await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatarUrl, req.user.id]);
-        res.json({ success: true, avatarUrl });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+app.post('/api/avatar', authMiddleware, upload.single('avatar'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: '请上传图片' });
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+    user.avatarUrl = `/uploads/${req.file.filename}`;
+    saveJSON('users.json', users);
+    res.json({ success: true, avatarUrl: user.avatarUrl });
 });
 
-// Get all users
-app.get('/api/users', authMiddleware, async (req, res) => {
-    try {
-        const usersR = await pool.query("SELECT * FROM users WHERE id != $1 AND role != 'system'", [req.user.id]);
-        const friendshipsR = await pool.query(
-            "SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'",
-            [req.user.id]
-        );
-        const friendIds = new Set(friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id));
+// Get all users (for discover/contacts)
+app.get('/api/users', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const friendships = loadJSON('friendships.json');
 
-        res.json(usersR.rows.map(u => ({
-            id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-            avatarColor: u.avatar_color, avatarText: u.avatar_text,
-            avatarUrl: u.avatar_url || null, banned: u.banned,
-            createdAt: u.created_at, isFriend: friendIds.has(u.id)
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    const result = users
+        .filter(u => u.id !== req.user.id && u.role !== 'system')
+        .map(u => ({
+            id: u.id,
+            username: u.username,
+            nickname: u.nickname,
+            bio: u.bio,
+            avatarColor: u.avatarColor,
+            avatarText: u.avatarText,
+            avatarUrl: u.avatarUrl || null,
+            banned: u.banned,
+            createdAt: u.createdAt,
+            isFriend: friendships.some(f =>
+                ((f.userId === req.user.id && f.friendId === u.id) || (f.userId === u.id && f.friendId === req.user.id)) && f.status === 'accepted'
+            )
+        }));
+
+    res.json(result);
 });
 
 // Get friends list
-app.get('/api/friends', authMiddleware, async (req, res) => {
-    try {
-        const friendshipsR = await pool.query(
-            "SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'",
-            [req.user.id]
-        );
-        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
-        if (friendIds.length === 0) return res.json([]);
+app.get('/api/friends', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const friendships = loadJSON('friendships.json');
 
-        const usersR = await pool.query('SELECT * FROM users WHERE id = ANY($1)', [friendIds]);
-        res.json(usersR.rows.map(u => ({
-            id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-            avatarColor: u.avatar_color, avatarText: u.avatar_text,
-            avatarUrl: u.avatar_url || null, online: false
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    const friendIds = friendships
+        .filter(f => (f.userId === req.user.id || f.friendId === req.user.id) && f.status === 'accepted')
+        .map(f => f.userId === req.user.id ? f.friendId : f.userId);
+
+    const friends = friendIds.map(fid => {
+        const u = users.find(u => u.id === fid);
+        if (!u) return null;
+        return {
+            id: u.id,
+            username: u.username,
+            nickname: u.nickname,
+            bio: u.bio,
+            avatarColor: u.avatarColor,
+            avatarText: u.avatarText,
+            avatarUrl: u.avatarUrl || null,
+            online: false // will be updated via socket
+        };
+    }).filter(Boolean);
+
+    res.json(friends);
 });
 
 // Add friend
-app.post('/api/friends/add', authMiddleware, async (req, res) => {
-    try {
-        const { userId } = req.body;
-        if (userId === req.user.id) return res.status(400).json({ error: '不能添加自己' });
+app.post('/api/friends/add', authMiddleware, (req, res) => {
+    const { userId } = req.body;
+    if (userId === req.user.id) return res.status(400).json({ error: '不能添加自己' });
 
-        const targetR = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
-        if (targetR.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    const users = loadJSON('users.json');
+    if (!users.find(u => u.id === userId)) return res.status(404).json({ error: '用户不存在' });
 
-        const existingR = await pool.query(
-            'SELECT * FROM friendships WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)',
-            [req.user.id, userId]
-        );
+    const friendships = loadJSON('friendships.json');
+    const existing = friendships.find(f =>
+        ((f.userId === req.user.id && f.friendId === userId) || (f.userId === userId && f.friendId === req.user.id))
+    );
 
-        if (existingR.rows.length > 0) {
-            const f = existingR.rows[0];
-            if (f.status === 'accepted') return res.status(400).json({ error: '已经是好友了' });
-            if (f.status === 'pending' && f.friend_id === req.user.id) {
-                await pool.query("UPDATE friendships SET status = 'accepted' WHERE id = $1", [f.id]);
-                return res.json({ success: true, message: '已接受好友请求' });
-            }
-            return res.status(400).json({ error: '已发送请求，等待对方确认' });
+    if (existing) {
+        if (existing.status === 'accepted') return res.status(400).json({ error: '已经是好友了' });
+        if (existing.status === 'pending') {
+            // Accept the request
+            existing.status = 'accepted';
+            saveJSON('friendships.json', friendships);
+            return res.json({ success: true, message: '已接受好友请求' });
         }
-
-        await pool.query(
-            "INSERT INTO friendships (id, user_id, friend_id, status, created_at) VALUES ($1,$2,$3,'accepted',$4)",
-            [genId('f'), req.user.id, userId, Date.now()]
-        );
-
-        res.json({ success: true, message: '好友添加成功' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
     }
+
+    friendships.push({
+        id: 'f_' + Date.now(),
+        userId: req.user.id,
+        friendId: userId,
+        status: 'accepted',
+        createdAt: Date.now()
+    });
+    saveJSON('friendships.json', friendships);
+
+    res.json({ success: true, message: '好友添加成功' });
 });
 
 // Remove friend
-app.post('/api/friends/remove', authMiddleware, async (req, res) => {
-    try {
-        const { userId } = req.body;
-        await pool.query(
-            'DELETE FROM friendships WHERE (user_id = $1 AND friend_id = $2) OR (user_id = $2 AND friend_id = $1)',
-            [req.user.id, userId]
-        );
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+app.post('/api/friends/remove', authMiddleware, (req, res) => {
+    const { userId } = req.body;
+    let friendships = loadJSON('friendships.json');
+    friendships = friendships.filter(f =>
+        !((f.userId === req.user.id && f.friendId === userId) || (f.userId === userId && f.friendId === req.user.id))
+    );
+    saveJSON('friendships.json', friendships);
+    res.json({ success: true });
 });
 
 // ========== Chat APIs ==========
 
 // Get chat history (private)
-app.get('/api/messages/private/:userId', authMiddleware, async (req, res) => {
-    try {
-        const otherUserId = req.params.userId;
-        const msgsR = await pool.query(
-            `SELECT * FROM messages WHERE type = 'private'
-             AND ((sender_id = $1 AND target_id = $2) OR (sender_id = $2 AND target_id = $1))
-             ORDER BY created_at ASC`,
-            [req.user.id, otherUserId]
-        );
+app.get('/api/messages/private/:userId', authMiddleware, (req, res) => {
+    const otherUserId = req.params.userId;
+    const messages = loadJSON('messages.json');
+    const privateMsgs = messages.filter(m =>
+        m.type === 'private' &&
+        ((m.from === req.user.id && m.to === otherUserId) || (m.from === otherUserId && m.to === req.user.id))
+    ).sort((a, b) => a.timestamp - b.timestamp);
 
-        // Mark as read
-        await pool.query(
-            "UPDATE messages SET is_read = true WHERE type = 'private' AND target_id = $1 AND sender_id = $2 AND is_read = false",
-            [req.user.id, otherUserId]
-        );
-
-        const userIds = [...new Set(msgsR.rows.map(m => m.sender_id))];
-        let userMap = {};
-        if (userIds.length > 0) {
-            const usersR = await pool.query('SELECT * FROM users WHERE id = ANY($1)', [userIds]);
-            usersR.rows.forEach(u => { userMap[u.id] = u; });
+    // Mark as read
+    const updated = messages.map(m => {
+        if (m.type === 'private' && m.to === req.user.id && m.from === otherUserId && !m.read) {
+            m.read = true;
         }
+        return m;
+    });
+    saveJSON('messages.json', updated);
 
-        res.json(msgsR.rows.map(m => {
-            const fromUser = userMap[m.sender_id];
-            return {
-                id: m.id, from: m.sender_id, to: m.target_id, content: m.content,
-                messageType: m.message_type || 'text', timestamp: m.created_at, read: m.is_read,
-                fromNickname: fromUser?.nickname, fromAvatarColor: fromUser?.avatar_color,
-                fromAvatarText: fromUser?.avatar_text, fromAvatarUrl: fromUser?.avatar_url || null,
-                fromBubbleStyle: fromUser?.bubble_style || 0
-            };
-        }));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    res.json(privateMsgs.map(m => ({
+        id: m.id,
+        from: m.from,
+        to: m.to,
+        content: m.content,
+        messageType: m.messageType || 'text',
+        timestamp: m.timestamp,
+        read: m.read
+    })));
 });
 
 // Get chat history (group)
-app.get('/api/messages/group/:groupId', authMiddleware, async (req, res) => {
-    try {
-        const groupId = req.params.groupId;
-        const msgsR = await pool.query(
-            "SELECT * FROM messages WHERE type = 'group' AND target_id = $1 ORDER BY created_at ASC LIMIT 500",
-            [groupId]
-        );
+app.get('/api/messages/group/:groupId', authMiddleware, (req, res) => {
+    const groupId = req.params.groupId;
+    const messages = loadJSON('messages.json');
+    const groupMsgs = messages.filter(m => m.type === 'group' && m.to === groupId)
+        .sort((a, b) => a.timestamp - b.timestamp);
 
-        const userIds = [...new Set(msgsR.rows.map(m => m.sender_id))];
-        let userMap = {};
-        if (userIds.length > 0) {
-            const usersR = await pool.query('SELECT * FROM users WHERE id = ANY($1)', [userIds]);
-            usersR.rows.forEach(u => { userMap[u.id] = u; });
-        }
-
-        res.json(msgsR.rows.map(m => {
-            const fromUser = userMap[m.sender_id];
-            return {
-                id: m.id, from: m.sender_id, to: m.target_id, content: m.content,
-                messageType: m.message_type || 'text', timestamp: m.created_at,
-                fromNickname: fromUser?.nickname, fromAvatarColor: fromUser?.avatar_color,
-                fromAvatarText: fromUser?.avatar_text, fromAvatarUrl: fromUser?.avatar_url || null,
-                fromBubbleStyle: fromUser?.bubble_style || 0
-            };
-        }));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Get last messages for chat list (batch)
-app.get('/api/chats/last-messages', authMiddleware, async (req, res) => {
-    try {
-        const result = {};
-
-        // Get friend IDs
-        const friendshipsR = await pool.query(
-            "SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'",
-            [req.user.id]
-        );
-        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
-
-        // Get user's groups
-        const groupsR = await pool.query(
-            "SELECT id FROM groups_t WHERE members @> $1::jsonb",
-            [JSON.stringify([req.user.id])]
-        );
-        const groupIds = groupsR.rows.map(g => g.id);
-
-        // Batch query: last private message for each friend
-        if (friendIds.length > 0) {
-            const privateMsgs = await pool.query(
-                `SELECT DISTINCT ON (
-                    CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
-                         ELSE target_id || '_' || sender_id END
-                ) sender_id, target_id, content, message_type, created_at
-                FROM messages
-                WHERE type = 'private'
-                  AND ((sender_id = $1 AND target_id = ANY($2::text[]))
-                    OR (sender_id = ANY($2::text[]) AND target_id = $1))
-                ORDER BY
-                    CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
-                         ELSE target_id || '_' || sender_id END,
-                    created_at DESC`,
-                [req.user.id, friendIds]
-            );
-            privateMsgs.rows.forEach(m => {
-                const otherId = m.sender_id === req.user.id ? m.target_id : m.sender_id;
-                result[otherId] = {
-                    content: m.message_type === 'image' ? '[图片]' : m.content,
-                    messageType: m.message_type,
-                    timestamp: m.created_at
-                };
-            });
-        }
-
-        // Batch query: last group message for each group
-        if (groupIds.length > 0) {
-            const groupMsgs = await pool.query(
-                `SELECT DISTINCT ON (target_id) target_id, content, message_type, created_at, sender_id
-                FROM messages
-                WHERE type = 'group' AND target_id = ANY($1::text[])
-                ORDER BY target_id, created_at DESC`,
-                [groupIds]
-            );
-            groupMsgs.rows.forEach(m => {
-                result[m.target_id] = {
-                    content: m.message_type === 'image' ? '[图片]' : m.content,
-                    messageType: m.message_type,
-                    timestamp: m.created_at
-                };
-            });
-        }
-
-        res.json(result);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Combined chat list endpoint — single request returns friends, groups, unread, last messages
-app.get('/api/chat-list', authMiddleware, async (req, res) => {
-    try {
-        // 1. Get friendships and group memberships in parallel
-        const [friendshipsR, groupsR] = await Promise.all([
-            pool.query("SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'", [req.user.id]),
-            pool.query("SELECT * FROM groups_t WHERE members @> $1::jsonb OR group_type = 'public' OR id = 'g_public'", [JSON.stringify([req.user.id])])
-        ]);
-
-        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
-        const groupIds = groupsR.rows.map(g => g.id);
-
-        // 2. Get friend user profiles, unread counts, and last messages in parallel
-        const parallelTasks = [];
-
-        // Friend profiles
-        if (friendIds.length > 0) {
-            parallelTasks.push(
-                pool.query('SELECT id, username, nickname, bio, avatar_color, avatar_text, avatar_url FROM users WHERE id = ANY($1)', [friendIds])
-                    .then(r => r.rows)
-            );
-        } else {
-            parallelTasks.push(Promise.resolve([]));
-        }
-
-        // Unread private counts (batch, not loop)
-        if (friendIds.length > 0) {
-            parallelTasks.push(
-                pool.query(
-                    "SELECT sender_id, COUNT(*) as cnt FROM messages WHERE type = 'private' AND sender_id = ANY($1::text[]) AND target_id = $2 AND is_read = false GROUP BY sender_id",
-                    [friendIds, req.user.id]
-                ).then(r => {
-                    const map = {};
-                    r.rows.forEach(row => { map[row.sender_id] = parseInt(row.cnt); });
-                    return map;
-                })
-            );
-        } else {
-            parallelTasks.push(Promise.resolve({}));
-        }
-
-        // Unread group counts (batch)
-        if (groupIds.length > 0) {
-            parallelTasks.push(
-                pool.query(
-                    "SELECT target_id, COUNT(*) as cnt FROM messages WHERE type = 'group' AND target_id = ANY($1::text[]) AND sender_id != $2 AND NOT (read_by @> $3::jsonb) GROUP BY target_id",
-                    [groupIds, req.user.id, JSON.stringify([req.user.id])]
-                ).then(r => {
-                    const map = {};
-                    r.rows.forEach(row => { map[row.target_id] = parseInt(row.cnt); });
-                    return map;
-                })
-            );
-        } else {
-            parallelTasks.push(Promise.resolve({}));
-        }
-
-        // Last private messages (batch)
-        if (friendIds.length > 0) {
-            parallelTasks.push(
-                pool.query(
-                    `SELECT DISTINCT ON (
-                        CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
-                             ELSE target_id || '_' || sender_id END
-                    ) sender_id, target_id, content, message_type, created_at
-                    FROM messages
-                    WHERE type = 'private'
-                      AND ((sender_id = $1 AND target_id = ANY($2::text[]))
-                        OR (sender_id = ANY($2::text[]) AND target_id = $1))
-                    ORDER BY
-                        CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
-                             ELSE target_id || '_' || sender_id END,
-                        created_at DESC`,
-                    [req.user.id, friendIds]
-                ).then(r => {
-                    const map = {};
-                    r.rows.forEach(m => {
-                        const otherId = m.sender_id === req.user.id ? m.target_id : m.sender_id;
-                        map[otherId] = {
-                            content: m.message_type === 'image' ? '[图片]' : m.content,
-                            messageType: m.message_type,
-                            timestamp: m.created_at
-                        };
-                    });
-                    return map;
-                })
-            );
-        } else {
-            parallelTasks.push(Promise.resolve({}));
-        }
-
-        // Last group messages (batch)
-        if (groupIds.length > 0) {
-            parallelTasks.push(
-                pool.query(
-                    `SELECT DISTINCT ON (target_id) target_id, content, message_type, created_at
-                    FROM messages
-                    WHERE type = 'group' AND target_id = ANY($1::text[])
-                    ORDER BY target_id, created_at DESC`,
-                    [groupIds]
-                ).then(r => {
-                    const map = {};
-                    r.rows.forEach(m => {
-                        map[m.target_id] = {
-                            content: m.message_type === 'image' ? '[图片]' : m.content,
-                            messageType: m.message_type,
-                            timestamp: m.created_at
-                        };
-                    });
-                    return map;
-                })
-            );
-        } else {
-            parallelTasks.push(Promise.resolve({}));
-        }
-
-        const [friendProfiles, privateUnread, groupUnread, privateLastMsgs, groupLastMsgs] = await Promise.all(parallelTasks);
-
-        // 4. Build response
-        const friends = friendProfiles.map(u => ({
-            id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-            avatarColor: u.avatar_color, avatarText: u.avatar_text,
-            avatarUrl: u.avatar_url || null,
-            unread: privateUnread[u.id] || 0,
-            lastMsg: privateLastMsgs[u.id] || null
-        }));
-
-        const groups = groupsR.rows.map(g => ({
-            id: g.id, name: g.name, description: g.description,
-            type: g.group_type || 'public', avatarColor: g.avatar_color,
-            avatarText: g.avatar_text, memberCount: g.members.length,
-            isMember: g.members.includes(req.user.id),
-            hasPassword: !!g.password, createdAt: g.created_at,
-            unread: groupUnread[g.id] || 0,
-            lastMsg: groupLastMsgs[g.id] || null
-        }));
-
-        res.json({ friends, groups, unread: { private: privateUnread, group: groupUnread }, lastMessages: { ...privateLastMsgs, ...groupLastMsgs } });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    res.json(groupMsgs.map(m => ({
+        id: m.id,
+        from: m.from,
+        to: m.to,
+        content: m.content,
+        messageType: m.messageType || 'text',
+        timestamp: m.timestamp
+    })));
 });
 
 // Get unread counts
-app.get('/api/messages/unread', authMiddleware, async (req, res) => {
-    try {
-        const friendshipsR = await pool.query(
-            "SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'",
-            [req.user.id]
-        );
-        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
+app.get('/api/messages/unread', authMiddleware, (req, res) => {
+    const messages = loadJSON('messages.json');
+    const friendships = loadJSON('friendships.json');
+    const groups = loadJSON('groups.json');
 
-        const privateUnread = {};
-        for (const fid of friendIds) {
-            const r = await pool.query(
-                "SELECT COUNT(*) as cnt FROM messages WHERE type = 'private' AND sender_id = $1 AND target_id = $2 AND is_read = false",
-                [fid, req.user.id]
-            );
-            privateUnread[fid] = parseInt(r.rows[0].cnt);
-        }
+    const friendIds = friendships
+        .filter(f => (f.userId === req.user.id || f.friendId === req.user.id) && f.status === 'accepted')
+        .map(f => f.userId === req.user.id ? f.friendId : f.userId);
 
-        const memberGroupsR = await pool.query("SELECT * FROM groups_t WHERE members @> $1::jsonb", [JSON.stringify([req.user.id])]);
-        const groupUnread = {};
-        for (const g of memberGroupsR.rows) {
-            const r = await pool.query(
-                "SELECT COUNT(*) as cnt FROM messages WHERE type = 'group' AND target_id = $1 AND sender_id != $2 AND NOT (read_by @> $3::jsonb)",
-                [g.id, req.user.id, JSON.stringify([req.user.id])]
-            );
-            groupUnread[g.id] = parseInt(r.rows[0].cnt);
-        }
+    // Private unread
+    const privateUnread = {};
+    friendIds.forEach(fid => {
+        privateUnread[fid] = messages.filter(m =>
+            m.type === 'private' && m.from === fid && m.to === req.user.id && !m.read
+        ).length;
+    });
 
-        res.json({ private: privateUnread, group: groupUnread });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    // Group unread (count new messages since last visit - simplified: count all unread)
+    const memberGroups = groups.filter(g => g.members.includes(req.user.id));
+    const groupUnread = {};
+    memberGroups.forEach(g => {
+        groupUnread[g.id] = messages.filter(m =>
+            m.type === 'group' && m.to === g.id && m.from !== req.user.id && !m.readBy?.includes(req.user.id)
+        ).length;
+    });
+
+    res.json({ private: privateUnread, group: groupUnread });
+});
+
+// ========== Group APIs ==========
+
+// Get groups I'm in
+app.get('/api/groups', authMiddleware, (req, res) => {
+    const groups = loadJSON('groups.json');
+    const myGroups = groups.filter(g => g.members.includes(req.user.id));
+
+    res.json(myGroups.map(g => ({
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        avatarColor: g.avatarColor,
+        avatarText: g.avatarText,
+        memberCount: g.members.length,
+        createdAt: g.createdAt
+    })));
+});
+
+// Create group
+app.post('/api/groups/create', authMiddleware, (req, res) => {
+    const { name, description } = req.body;
+    if (!name) return res.status(400).json({ error: '群名必填' });
+
+    const groups = loadJSON('groups.json');
+    const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
+    const newGroup = {
+        id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name,
+        description: description || '',
+        avatarColor: colors[Math.floor(Math.random() * colors.length)],
+        avatarText: name.slice(0, 1),
+        members: [req.user.id],
+        createdAt: Date.now()
+    };
+    groups.push(newGroup);
+    saveJSON('groups.json', groups);
+
+    io.emit('group-created', newGroup);
+    res.json({ success: true, group: newGroup });
+});
+
+// Join group
+app.post('/api/groups/join', authMiddleware, (req, res) => {
+    const { groupId } = req.body;
+    const groups = loadJSON('groups.json');
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return res.status(404).json({ error: '群不存在' });
+    if (group.members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
+
+    group.members.push(req.user.id);
+    saveJSON('groups.json', groups);
+
+    // Notify group members
+    io.to(groupId).emit('group-member-joined', { groupId, userId: req.user.id, nickname: req.user.nickname });
+    io.emit('groups-updated');
+
+    res.json({ success: true });
+});
+
+// Get group members
+app.get('/api/groups/:groupId/members', authMiddleware, (req, res) => {
+    const groups = loadJSON('groups.json');
+    const users = loadJSON('users.json');
+    const group = groups.find(g => g.id === req.params.groupId);
+    if (!group) return res.status(404).json({ error: '群不存在' });
+
+    const members = group.members.map(mid => {
+        const u = users.find(u => u.id === mid);
+        return u ? { id: u.id, nickname: u.nickname, avatarColor: u.avatarColor, avatarText: u.avatarText, avatarUrl: u.avatarUrl || null } : null;
+    }).filter(Boolean);
+
+    res.json(members);
 });
 
 // Upload chat image
@@ -684,1015 +481,365 @@ app.post('/api/upload', authMiddleware, upload.single('image'), (req, res) => {
     res.json({ success: true, url: `/uploads/${req.file.filename}` });
 });
 
-// ========== Group APIs ==========
-
-app.get('/api/groups', authMiddleware, async (req, res) => {
-    try {
-        const groupsR = await pool.query(
-            "SELECT * FROM groups_t WHERE members @> $1::jsonb OR group_type = 'public' OR id = 'g_public'",
-            [JSON.stringify([req.user.id])]
-        );
-        res.json(groupsR.rows.map(g => ({
-            id: g.id, name: g.name, description: g.description,
-            type: g.group_type || 'public', avatarColor: g.avatar_color,
-            avatarText: g.avatar_text, memberCount: g.members.length,
-            isMember: g.members.includes(req.user.id),
-            hasPassword: !!g.password, createdAt: g.created_at
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/groups/:groupId/members', authMiddleware, async (req, res) => {
-    try {
-        const gR = await pool.query('SELECT * FROM groups_t WHERE id = $1', [req.params.groupId]);
-        if (gR.rows.length === 0) return res.status(404).json({ error: '群不存在' });
-        const members = gR.rows[0].members;
-        if (!members || members.length === 0) return res.json([]);
-
-        const usersR = await pool.query('SELECT * FROM users WHERE id = ANY($1)', [members]);
-        res.json(usersR.rows.map(u => ({
-            id: u.id, nickname: u.nickname, avatarColor: u.avatar_color,
-            avatarText: u.avatar_text, avatarUrl: u.avatar_url || null
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Create group
-app.post('/api/groups/create', authMiddleware, async (req, res) => {
-    try {
-        const { name, description, type, password } = req.body;
-        if (!name) return res.status(400).json({ error: '群名必填' });
-
-        const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
-        const gid = genId('g');
-        const now = Date.now();
-
-        await pool.query(
-            'INSERT INTO groups_t (id, name, description, group_type, password, avatar_color, avatar_text, members, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-            [gid, name, description || '', type || 'public', type === 'private' ? (password || '') : '',
-             colors[Math.floor(Math.random() * colors.length)], name.slice(0, 1),
-             JSON.stringify([req.user.id]), now]
-        );
-
-        io.emit('group-created', { id: gid, name, description: description || '', type: type || 'public' });
-        res.json({ success: true, group: { id: gid, name, description: description || '', type: type || 'public' } });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Join group
-app.post('/api/groups/join', authMiddleware, async (req, res) => {
-    try {
-        const { groupId, password } = req.body;
-        const gR = await pool.query('SELECT * FROM groups_t WHERE id = $1', [groupId]);
-        if (gR.rows.length === 0) return res.status(404).json({ error: '群不存在' });
-        const group = gR.rows[0];
-        if (group.members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
-
-        if (group.group_type === 'private' && group.password && group.password !== (password || '')) {
-            return res.status(403).json({ error: '密码错误，无法加入私密群组' });
-        }
-
-        await pool.query(
-            'UPDATE groups_t SET members = members || $1::jsonb WHERE id = $2 AND NOT members @> $1::jsonb',
-            [JSON.stringify([req.user.id]), groupId]
-        );
-
-        io.to(groupId).emit('group-member-joined', { groupId, userId: req.user.id, nickname: req.user.nickname });
-        io.emit('groups-updated');
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
 // ========== Moments APIs ==========
 
-app.get('/api/moments', authMiddleware, async (req, res) => {
-    try {
-        const friendshipsR = await pool.query(
-            "SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'",
-            [req.user.id]
-        );
-        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
+// Get moments
+app.get('/api/moments', authMiddleware, (req, res) => {
+    const moments = loadJSON('moments.json');
+    const users = loadJSON('users.json');
+    const friendships = loadJSON('friendships.json');
 
-        let momentsR;
-        if (friendIds.length > 0) {
-            momentsR = await pool.query(
-                'SELECT * FROM moments WHERE user_id = $1 OR user_id = ANY($2) OR is_public = true ORDER BY created_at DESC LIMIT 100',
-                [req.user.id, friendIds]
-            );
-        } else {
-            momentsR = await pool.query(
-                'SELECT * FROM moments WHERE user_id = $1 OR is_public = true ORDER BY created_at DESC LIMIT 100',
-                [req.user.id]
-            );
-        }
+    const friendIds = friendships
+        .filter(f => (f.userId === req.user.id || f.friendId === req.user.id) && f.status === 'accepted')
+        .map(f => f.userId === req.user.id ? f.friendId : f.userId);
 
-        const userIds = [...new Set(momentsR.rows.map(m => m.user_id))];
-        let userMap = {};
-        if (userIds.length > 0) {
-            const usersR = await pool.query('SELECT * FROM users WHERE id = ANY($1)', [userIds]);
-            usersR.rows.forEach(u => { userMap[u.id] = u; });
-        }
+    // Show own + friends' moments + public moments
+    const visibleMoments = moments.filter(m =>
+        m.userId === req.user.id || friendIds.includes(m.userId) || m.isPublic
+    ).sort((a, b) => b.createdAt - a.createdAt);
 
-        res.json(momentsR.rows.map(m => {
-            const u = userMap[m.user_id];
-            return {
-                id: m.id, userId: m.user_id,
-                nickname: u ? u.nickname : '未知用户',
-                avatarColor: u ? u.avatar_color : '#999',
-                avatarText: u ? u.avatar_text : '?',
-                avatarUrl: u ? (u.avatar_url || null) : null,
-                content: m.content, images: m.images || [],
-                likes: m.likes || [], comments: m.comments || [],
-                createdAt: m.created_at, isOwn: m.user_id === req.user.id
-            };
-        }));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    res.json(visibleMoments.map(m => {
+        const u = users.find(u => u.id === m.userId);
+        return {
+            id: m.id,
+            userId: m.userId,
+            nickname: u ? u.nickname : '未知用户',
+            avatarColor: u ? u.avatarColor : '#999',
+            avatarText: u ? u.avatarText : '?',
+            avatarUrl: u ? (u.avatarUrl || null) : null,
+            content: m.content,
+            images: m.images || [],
+            likes: m.likes || [],
+            comments: m.comments || [],
+            createdAt: m.createdAt,
+            isOwn: m.userId === req.user.id
+        };
+    }));
 });
 
 // Post moment
-app.post('/api/moments/post', authMiddleware, upload.array('images', 9), async (req, res) => {
-    try {
-        const { content } = req.body;
-        if (!content && (!req.files || req.files.length === 0)) {
-            return res.status(400).json({ error: '说点什么吧' });
-        }
-        const imageUrls = req.files ? req.files.map(f => `/uploads/${f.filename}`) : [];
-        const mid = genId('m');
-        const now = Date.now();
-
-        await pool.query(
-            'INSERT INTO moments (id, user_id, content, images, likes, comments, is_public, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-            [mid, req.user.id, content || '', JSON.stringify(imageUrls), JSON.stringify([]), JSON.stringify([]), true, now]
-        );
-
-        const newMomentObj = { id: mid, userId: req.user.id, content: content || '', images: imageUrls, likes: [], comments: [], createdAt: now };
-        io.emit('new-moment', newMomentObj);
-        res.json({ success: true, moment: newMomentObj });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+app.post('/api/moments/post', authMiddleware, upload.array('images', 9), (req, res) => {
+    const { content } = req.body;
+    if (!content && (!req.files || req.files.length === 0)) {
+        return res.status(400).json({ error: '说点什么吧' });
     }
+
+    const moments = loadJSON('moments.json');
+    const imageUrls = req.files ? req.files.map(f => `/uploads/${f.filename}`) : [];
+
+    const newMoment = {
+        id: 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        userId: req.user.id,
+        content: content || '',
+        images: imageUrls,
+        likes: [],
+        comments: [],
+        isPublic: true,
+        createdAt: Date.now()
+    };
+    moments.push(newMoment);
+    saveJSON('moments.json', moments);
+
+    io.emit('new-moment', newMoment);
+    res.json({ success: true, moment: newMoment });
 });
 
 // Like moment
-app.post('/api/moments/like/:momentId', authMiddleware, async (req, res) => {
-    try {
-        const mR = await pool.query('SELECT * FROM moments WHERE id = $1', [req.params.momentId]);
-        if (mR.rows.length === 0) return res.status(404).json({ error: '动态不存在' });
-        const moment = mR.rows[0];
-        let likes = moment.likes || [];
+app.post('/api/moments/like/:momentId', authMiddleware, (req, res) => {
+    const moments = loadJSON('moments.json');
+    const moment = moments.find(m => m.id === req.params.momentId);
+    if (!moment) return res.status(404).json({ error: '动态不存在' });
 
-        if (likes.includes(req.user.id)) {
-            likes = likes.filter(id => id !== req.user.id);
-        } else {
-            likes.push(req.user.id);
-        }
-
-        await pool.query('UPDATE moments SET likes = $1 WHERE id = $2', [JSON.stringify(likes), req.params.momentId]);
-
-        moment.likes = likes;
-        io.emit('moment-updated', moment);
-        res.json({ success: true, likes });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+    if (moment.likes.includes(req.user.id)) {
+        moment.likes = moment.likes.filter(id => id !== req.user.id);
+    } else {
+        moment.likes.push(req.user.id);
     }
+    saveJSON('moments.json', moments);
+
+    io.emit('moment-updated', moment);
+    res.json({ success: true, likes: moment.likes });
 });
 
 // Comment moment
-app.post('/api/moments/comment/:momentId', authMiddleware, async (req, res) => {
-    try {
-        const { content } = req.body;
-        if (!content) return res.status(400).json({ error: '评论内容不能为空' });
+app.post('/api/moments/comment/:momentId', authMiddleware, (req, res) => {
+    const { content } = req.body;
+    if (!content) return res.status(400).json({ error: '评论内容不能为空' });
 
-        const mR = await pool.query('SELECT * FROM moments WHERE id = $1', [req.params.momentId]);
-        if (mR.rows.length === 0) return res.status(404).json({ error: '动态不存在' });
-        const moment = mR.rows[0];
+    const moments = loadJSON('moments.json');
+    const moment = moments.find(m => m.id === req.params.momentId);
+    if (!moment) return res.status(404).json({ error: '动态不存在' });
 
-        const comment = {
-            id: genId('c'),
-            userId: req.user.id,
-            nickname: req.user.nickname,
-            content,
-            createdAt: Date.now()
-        };
-        const comments = [...(moment.comments || []), comment];
+    const comment = {
+        id: 'c_' + Date.now(),
+        userId: req.user.id,
+        nickname: req.user.nickname,
+        content,
+        createdAt: Date.now()
+    };
+    moment.comments.push(comment);
+    saveJSON('moments.json', moments);
 
-        await pool.query('UPDATE moments SET comments = $1 WHERE id = $2', [JSON.stringify(comments), req.params.momentId]);
-
-        moment.comments = comments;
-        io.emit('moment-updated', moment);
-        res.json({ success: true, comment });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    io.emit('moment-updated', moment);
+    res.json({ success: true, comment });
 });
 
-// Delete moment
-app.delete('/api/moments/:momentId', authMiddleware, async (req, res) => {
-    try {
-        const mR = await pool.query('SELECT * FROM moments WHERE id = $1', [req.params.momentId]);
-        if (mR.rows.length === 0) return res.status(404).json({ error: '动态不存在' });
-        if (mR.rows[0].user_id !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
-            return res.status(403).json({ error: '无权删除' });
-        }
-        await pool.query('DELETE FROM moments WHERE id = $1', [req.params.momentId]);
-        io.emit('moment-deleted', req.params.momentId);
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+// Delete moment (own or admin)
+app.delete('/api/moments/:momentId', authMiddleware, (req, res) => {
+    let moments = loadJSON('moments.json');
+    const moment = moments.find(m => m.id === req.params.momentId);
+
+    if (!moment) return res.status(404).json({ error: '动态不存在' });
+    if (moment.userId !== req.user.id && req.user.role !== 'admin') {
+        return res.status(403).json({ error: '无权删除' });
     }
+
+    moments = moments.filter(m => m.id !== req.params.momentId);
+    saveJSON('moments.json', moments);
+
+    io.emit('moment-deleted', req.params.momentId);
+    res.json({ success: true });
 });
 
 // ========== Admin APIs ==========
 
-app.get('/api/admin/users', adminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query("SELECT * FROM users WHERE role != 'system'");
-        res.json(r.rows.map(u => ({
-            id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-            avatarColor: u.avatar_color, avatarText: u.avatar_text,
-            avatarUrl: u.avatar_url || null, role: u.role, banned: u.banned,
-            createdAt: u.created_at, points: u.points || 0
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+app.get('/api/admin/users', adminMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    res.json(users.filter(u => u.role !== 'system').map(u => ({
+        id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
+        avatarColor: u.avatarColor, avatarText: u.avatarText,
+        role: u.role, banned: u.banned, createdAt: u.createdAt
+    })));
 });
 
-app.post('/api/admin/ban/:userId', adminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
-        const user = r.rows[0];
-        if (user.role === 'super_admin') return res.status(400).json({ error: '不能封禁超级管理员' });
-        if (user.role === 'admin' && req.user.role !== 'super_admin') return res.status(400).json({ error: '只有超级管理员可以封禁管理员' });
+app.post('/api/admin/ban/:userId', adminMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.params.userId);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
+    if (user.role === 'admin') return res.status(400).json({ error: '不能封禁管理员' });
 
-        const newBanned = !user.banned;
-        await pool.query('UPDATE users SET banned = $1 WHERE id = $2', [newBanned, req.params.userId]);
+    user.banned = !user.banned;
+    saveJSON('users.json', users);
 
-        if (newBanned) {
-            const sockets = io.sockets.sockets;
-            for (const [sid, socket] of sockets) {
-                if (socket.userId === user.id) {
-                    socket.emit('banned', { message: '你的账号已被管理员封禁' });
-                    socket.disconnect(true);
-                }
-            }
-        }
-
-        res.json({ success: true, banned: newBanned });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.delete('/api/admin/user/:userId', adminMiddleware, async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
-        const user = r.rows[0];
-        if (user.role === 'super_admin') return res.status(400).json({ error: '不能删除超级管理员' });
-        if (user.role === 'admin' && req.user.role !== 'super_admin') return res.status(400).json({ error: '只有超级管理员可以删除管理员' });
-
-        await pool.query('UPDATE groups_t SET members = members - $1 WHERE members @> $2::jsonb', [userId, JSON.stringify([userId])]);
-        await pool.query('DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1', [userId]);
-        await pool.query('DELETE FROM moments WHERE user_id = $1', [userId]);
-        await pool.query('DELETE FROM messages WHERE sender_id = $1 OR target_id = $1', [userId]);
-        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
-
+    if (user.banned) {
+        // Force disconnect banned user
         const sockets = io.sockets.sockets;
         for (const [sid, socket] of sockets) {
-            if (socket.userId === userId) socket.disconnect(true);
-        }
-
-        io.emit('user-deleted', userId);
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/admin/messages/:userId', superAdminMiddleware, async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const targetR = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-
-        if (req.user.role !== 'super_admin' && targetR.rows.length > 0 && targetR.rows[0].role === 'super_admin') {
-            return res.status(403).json({ error: '无权查看超级管理员的聊天记录' });
-        }
-
-        let msgsR = await pool.query(
-            'SELECT * FROM messages WHERE sender_id = $1 OR target_id = $1 ORDER BY created_at DESC LIMIT 200',
-            [userId]
-        );
-
-        // Filter super-admin messages for non-super-admin
-        if (req.user.role !== 'super_admin') {
-            const superAdminR = await pool.query("SELECT id FROM users WHERE role = 'super_admin'");
-            if (superAdminR.rows.length > 0) {
-                const saId = superAdminR.rows[0].id;
-                msgsR.rows = msgsR.rows.filter(m => !(m.sender_id === saId || m.target_id === saId));
+            if (socket.userId === user.id) {
+                socket.emit('banned', { message: '你的账号已被管理员封禁' });
+                socket.disconnect(true);
             }
         }
-
-        const userIds = [...new Set([...msgsR.rows.map(m => m.sender_id), ...msgsR.rows.map(m => m.target_id)])];
-        let userMap = {};
-        if (userIds.length > 0) {
-            const usersR = await pool.query('SELECT * FROM users WHERE id = ANY($1)', [userIds]);
-            usersR.rows.forEach(u => { userMap[u.id] = u; });
-        }
-
-        const groupsR = await pool.query('SELECT * FROM groups_t');
-        const groupMap = {};
-        groupsR.rows.forEach(g => { groupMap[g.id] = g; });
-
-        res.json(msgsR.rows.map(m => ({
-            id: m.id, from: m.sender_id,
-            fromNickname: userMap[m.sender_id]?.nickname || '未知',
-            to: m.target_id,
-            toNickname: m.type === 'group' ? (groupMap[m.target_id]?.name || '群聊') : (userMap[m.target_id]?.nickname || '未知'),
-            type: m.type, content: m.content,
-            messageType: m.message_type || 'text', timestamp: m.created_at
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
     }
+
+    res.json({ success: true, banned: user.banned });
 });
 
-// Mute user
-app.post('/api/admin/mute/:userId', adminMiddleware, async (req, res) => {
-    try {
-        const { duration } = req.body; // '1day', '7days', 'permanent'
-        const userId = req.params.userId;
+app.delete('/api/admin/user/:userId', adminMiddleware, (req, res) => {
+    const userId = req.params.userId;
+    let users = loadJSON('users.json');
+    const user = users.find(u => u.id === userId);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
+    if (user.role === 'admin') return res.status(400).json({ error: '不能删除管理员' });
 
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    // Remove from all groups
+    let groups = loadJSON('groups.json');
+    groups.forEach(g => { g.members = g.members.filter(m => m !== userId); });
+    saveJSON('groups.json', groups);
 
-        const user = r.rows[0];
-        if (user.role === 'super_admin') return res.status(400).json({ error: '不能禁言超级管理员' });
-        if (user.role === 'admin' && req.user.role !== 'super_admin') return res.status(400).json({ error: '只有超级管理员可以禁言管理员' });
+    // Remove friendships
+    let friendships = loadJSON('friendships.json');
+    friendships = friendships.filter(f => f.userId !== userId && f.friendId !== userId);
+    saveJSON('friendships.json', friendships);
 
-        let mutedUntil = null;
-        if (duration === '1day') mutedUntil = Date.now() + 86400000;
-        else if (duration === '7days') mutedUntil = Date.now() + 7 * 86400000;
-        else if (duration === 'permanent') mutedUntil = 253402300799000; // Year 9999
-        else return res.status(400).json({ error: '无效的时长' });
+    // Remove moments
+    let moments = loadJSON('moments.json');
+    moments = moments.filter(m => m.userId !== userId);
+    saveJSON('moments.json', moments);
 
-        await pool.query('UPDATE users SET muted_until = $1 WHERE id = $2', [mutedUntil, userId]);
+    // Remove messages
+    let messages = loadJSON('messages.json');
+    messages = messages.filter(m => m.from !== userId && m.to !== userId);
+    saveJSON('messages.json', messages);
 
-        const sockets = io.sockets.sockets;
-        for (const [sid, socket] of sockets) {
-            if (socket.userId === userId) {
-                socket.emit('muted', { mutedUntil });
-            }
-        }
+    // Remove user
+    users = users.filter(u => u.id !== userId);
+    saveJSON('users.json', users);
 
-        res.json({ success: true, mutedUntil });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
+    // Disconnect
+    const sockets = io.sockets.sockets;
+    for (const [sid, socket] of sockets) {
+        if (socket.userId === userId) socket.disconnect(true);
     }
+
+    io.emit('user-deleted', userId);
+    res.json({ success: true });
 });
 
-// Unmute user
-app.post('/api/admin/unmute/:userId', adminMiddleware, async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        await pool.query('UPDATE users SET muted_until = NULL WHERE id = $1', [userId]);
+app.get('/api/admin/messages/:userId', adminMiddleware, (req, res) => {
+    const userId = req.params.userId;
+    const messages = loadJSON('messages.json');
+    const users = loadJSON('users.json');
 
-        const sockets = io.sockets.sockets;
-        for (const [sid, socket] of sockets) {
-            if (socket.userId === userId) {
-                socket.emit('unmuted', {});
-            }
-        }
+    const userMsgs = messages.filter(m => m.from === userId || m.to === userId)
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 200);
 
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    res.json(userMsgs.map(m => {
+        const fromUser = users.find(u => u.id === m.from);
+        const toUser = users.find(u => u.id === m.to);
+        return {
+            id: m.id,
+            from: m.from,
+            fromNickname: fromUser ? fromUser.nickname : '未知',
+            to: m.to,
+            toNickname: m.type === 'group' ? (loadJSON('groups.json').find(g => g.id === m.to)?.name || '群聊') : (toUser ? toUser.nickname : '未知'),
+            type: m.type,
+            content: m.content,
+            messageType: m.messageType || 'text',
+            timestamp: m.timestamp
+        };
+    }));
 });
 
-app.delete('/api/admin/moment/:momentId', adminMiddleware, async (req, res) => {
-    try {
-        await pool.query('DELETE FROM moments WHERE id = $1', [req.params.momentId]);
-        io.emit('moment-deleted', req.params.momentId);
-        res.json({ success: true });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+app.delete('/api/admin/moment/:momentId', adminMiddleware, (req, res) => {
+    let moments = loadJSON('moments.json');
+    moments = moments.filter(m => m.id !== req.params.momentId);
+    saveJSON('moments.json', moments);
+    io.emit('moment-deleted', req.params.momentId);
+    res.json({ success: true });
 });
 
-app.get('/api/admin/stats', adminMiddleware, async (req, res) => {
-    try {
-        const now = Date.now();
-        const today = now - 86400000;
-        const onlineCount = Object.values(io.sockets.sockets).filter(s => s.userId).length;
+app.get('/api/admin/stats', adminMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const messages = loadJSON('messages.json');
+    const groups = loadJSON('groups.json');
+    const moments = loadJSON('moments.json');
+    const friendships = loadJSON('friendships.json');
 
-        const [totalUsers, bannedUsers, totalMessages, todayMessages, totalGroups, totalMoments, todayMoments, totalFriendships] = await Promise.all([
-            pool.query("SELECT COUNT(*) as cnt FROM users WHERE role != 'system'"),
-            pool.query("SELECT COUNT(*) as cnt FROM users WHERE banned = true"),
-            pool.query("SELECT COUNT(*) as cnt FROM messages"),
-            pool.query("SELECT COUNT(*) as cnt FROM messages WHERE created_at > $1", [today]),
-            pool.query("SELECT COUNT(*) as cnt FROM groups_t"),
-            pool.query("SELECT COUNT(*) as cnt FROM moments"),
-            pool.query("SELECT COUNT(*) as cnt FROM moments WHERE created_at > $1", [today]),
-            pool.query("SELECT COUNT(*) as cnt FROM friendships WHERE status = 'accepted'")
-        ]);
+    const now = Date.now();
+    const today = now - 86400000;
 
-        res.json({
-            totalUsers: parseInt(totalUsers.rows[0].cnt), bannedUsers: parseInt(bannedUsers.rows[0].cnt),
-            totalMessages: parseInt(totalMessages.rows[0].cnt), todayMessages: parseInt(todayMessages.rows[0].cnt),
-            totalGroups: parseInt(totalGroups.rows[0].cnt), totalMoments: parseInt(totalMoments.rows[0].cnt),
-            todayMoments: parseInt(todayMoments.rows[0].cnt),
-            totalFriendships: parseInt(totalFriendships.rows[0].cnt), onlineUsers: onlineCount
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
+    res.json({
+        totalUsers: users.filter(u => u.role !== 'system').length,
+        bannedUsers: users.filter(u => u.banned).length,
+        totalMessages: messages.length,
+        todayMessages: messages.filter(m => m.timestamp > today).length,
+        totalGroups: groups.length,
+        totalMoments: moments.length,
+        todayMoments: moments.filter(m => m.createdAt > today).length,
+        totalFriendships: friendships.filter(f => f.status === 'accepted').length,
+        onlineUsers: Object.values(io.sockets.sockets).filter(s => s.userId).length
+    });
 });
 
-// Promote user
-app.post('/api/admin/promote/:userId', superAdminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
-        if (r.rows[0].role === 'admin') return res.json({ success: true, message: '该用户已是管理员' });
+// ========== Socket.IO - Real-time Communication ==========
 
-        await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [req.params.userId]);
-
-        const sockets = io.sockets.sockets;
-        for (const [sid, socket] of sockets) {
-            if (socket.userId === req.params.userId) {
-                socket.emit('promoted', { message: '你已被提升为管理员！' });
-                socket.role = 'admin';
-            }
-        }
-
-        res.json({ success: true, message: `${r.rows[0].nickname} 已提升为管理员` });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== Check-in ==========
-
-app.post('/api/checkin', authMiddleware, async (req, res) => {
-    try {
-        const today = new Date().toDateString();
-        if (req.user.last_checkin_date === today) {
-            return res.status(400).json({ error: '今天已经签到过了！' });
-        }
-
-        const newPoints = (req.user.points || 0) + 10;
-        await pool.query('UPDATE users SET points = $1, last_checkin_date = $2 WHERE id = $3', [newPoints, today, req.user.id]);
-
-        res.json({ success: true, points: newPoints, earned: 10, message: '签到成功！+10积分' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== Bubble APIs ==========
-
-app.get('/api/bubbles', authMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
-        const user = r.rows[0];
-        const isAdmin = user.role === 'super_admin' || user.role === 'admin';
-        const bubblePurchases = user.bubble_purchases || {};
-
-        let modified = false;
-        const bubbles = BUBBLE_STYLES.map(b => {
-            let owned = isAdmin || b.id === 0;
-            let expiresAt = null;
-            let isDay = false;
-
-            const key = String(b.id);
-            if (!owned && bubblePurchases[key]) {
-                const purchase = bubblePurchases[key];
-                if (purchase === 'permanent') { owned = true; isDay = false; }
-                else if (typeof purchase === 'number') {
-                    if (purchase > Date.now()) { owned = true; expiresAt = purchase; isDay = true; }
-                    else { delete bubblePurchases[key]; modified = true; }
-                }
-            }
-
-            return { ...b, owned, equipped: b.id === user.bubble_style, canAfford: isAdmin || (user.points || 0) >= b.price, expiresAt, isDay };
-        });
-
-        if (modified) {
-            await pool.query('UPDATE users SET bubble_purchases = $1 WHERE id = $2', [JSON.stringify(bubblePurchases), user.id]);
-        }
-
-        res.json(bubbles);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/bubbles/purchase', authMiddleware, async (req, res) => {
-    try {
-        const { bubbleId, duration } = req.body;
-        const bubble = BUBBLE_STYLES.find(b => b.id === bubbleId);
-        if (!bubble) return res.status(404).json({ error: '气泡不存在' });
-
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
-        const user = r.rows[0];
-        const isDay = duration === 'day';
-        const actualPrice = isDay ? Math.max(1, Math.floor(bubble.price * 0.3)) : bubble.price;
-
-        if (user.role !== 'super_admin' && user.role !== 'admin') {
-            if ((user.points || 0) < actualPrice) return res.status(400).json({ error: '积分不足' });
-            await pool.query('UPDATE users SET points = points - $1 WHERE id = $2', [actualPrice, user.id]);
-        }
-
-        const purchases = user.bubble_purchases || {};
-        const key = String(bubbleId);
-        if (isDay) {
-            purchases[key] = Date.now() + 24 * 60 * 60 * 1000;
-        } else {
-            purchases[key] = 'permanent';
-        }
-
-        await pool.query(
-            'UPDATE users SET bubble_purchases = $1, bubble_style = $2 WHERE id = $3',
-            [JSON.stringify(purchases), bubbleId, user.id]
-        );
-
-        const durationText = isDay ? '（1天）' : '（永久）';
-        res.json({ success: true, points: user.points - actualPrice, bubbleStyle: bubbleId, message: `已装备「${bubble.name}」气泡${durationText}！` });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.put('/api/bubbles/equip', authMiddleware, async (req, res) => {
-    try {
-        const { bubbleId } = req.body;
-        const bubble = BUBBLE_STYLES.find(b => b.id === bubbleId);
-        if (!bubble) return res.status(404).json({ error: '气泡不存在' });
-
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
-        const user = r.rows[0];
-        const isAdmin = user.role === 'super_admin' || user.role === 'admin';
-
-        let owns = isAdmin || bubbleId === 0;
-        const purchases = user.bubble_purchases || {};
-        const key = String(bubbleId);
-        const purchase = purchases[key];
-
-        if (!owns && purchase) {
-            if (purchase === 'permanent') owns = true;
-            else if (typeof purchase === 'number') {
-                if (purchase > Date.now()) owns = true;
-                else {
-                    delete purchases[key];
-                    await pool.query('UPDATE users SET bubble_purchases = $1 WHERE id = $2', [JSON.stringify(purchases), user.id]);
-                    return res.status(400).json({ error: '该气泡已过期，请重新兑换' });
-                }
-            }
-        }
-
-        if (!owns) return res.status(400).json({ error: '你还没有购买这个气泡！请先兑换' });
-
-        await pool.query('UPDATE users SET bubble_style = $1 WHERE id = $2', [bubbleId, user.id]);
-        res.json({ success: true, bubbleStyle: bubbleId });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== User Profile ==========
-
-app.get('/api/user/:userId', authMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
-        const user = r.rows[0];
-
-        const momentsR = await pool.query(
-            'SELECT * FROM moments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20',
-            [user.id]
-        );
-
-        const userJSON = userToJSON(user);
-        res.json({
-            ...userJSON,
-            moments: momentsR.rows.map(m => ({
-                id: m.id, content: m.content, images: m.images || [],
-                likes: m.likes || [], comments: m.comments || [], createdAt: m.created_at
-            }))
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== Donation ==========
-
-app.get('/api/donation', authMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query("SELECT * FROM donations WHERE id = 'donation_config'");
-        res.json(r.rows[0] || { wechat: '', alipay: '' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/admin/donation', adminMiddleware, upload.fields([{ name: 'wechat', maxCount: 1 }, { name: 'alipay', maxCount: 1 }]), async (req, res) => {
-    try {
-        const existR = await pool.query("SELECT id FROM donations WHERE id = 'donation_config'");
-        const wechatUrl = req.files?.wechat?.[0] ? `/uploads/${req.files.wechat[0].filename}` : null;
-        const alipayUrl = req.files?.alipay?.[0] ? `/uploads/${req.files.alipay[0].filename}` : null;
-
-        if (existR.rows.length > 0) {
-            let updates = [];
-            let vals = [];
-            let idx = 1;
-            if (wechatUrl) { updates.push(`wechat = $${idx++}`); vals.push(wechatUrl); }
-            if (alipayUrl) { updates.push(`alipay = $${idx++}`); vals.push(alipayUrl); }
-            if (updates.length > 0) {
-                vals.push('donation_config');
-                await pool.query(`UPDATE donations SET ${updates.join(', ')} WHERE id = $${idx}`, vals);
-            }
-        } else {
-            await pool.query(
-                "INSERT INTO donations (id, wechat, alipay) VALUES ('donation_config', $1, $2)",
-                [wechatUrl || '', alipayUrl || '']
-            );
-        }
-
-        const r = await pool.query("SELECT * FROM donations WHERE id = 'donation_config'");
-        res.json({ success: true, donation: r.rows[0] });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== Feedback ==========
-
-app.post('/api/feedback', authMiddleware, async (req, res) => {
-    try {
-        const { content } = req.body;
-        if (!content || content.trim().length < 2) return res.status(400).json({ error: '反馈内容至少2个字符' });
-
-        const fid = genId('fb');
-        const now = Date.now();
-
-        await pool.query(
-            "INSERT INTO feedbacks (id, user_id, nickname, avatar_color, avatar_text, content, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7)",
-            [fid, req.user.id, req.user.nickname, req.user.avatar_color, req.user.avatar_text, content.trim(), now]
-        );
-
-        const sockets = io.sockets.sockets;
-        for (const [sid, socket] of sockets) {
-            if (socket.role === 'super_admin' || socket.role === 'admin') {
-                socket.emit('new-feedback', { id: fid, userId: req.user.id, nickname: req.user.nickname, avatarColor: req.user.avatar_color, avatarText: req.user.avatar_text, content: content.trim(), status: 'pending', createdAt: now });
-            }
-        }
-
-        res.json({ success: true, id: fid });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/admin/feedbacks', adminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM feedbacks ORDER BY created_at DESC');
-        res.json(r.rows.map(f => ({
-            id: f.id, userId: f.user_id, nickname: f.nickname,
-            avatarColor: f.avatar_color, avatarText: f.avatar_text,
-            content: f.content, status: f.status, createdAt: f.created_at
-        })));
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/admin/feedback/:feedbackId/resolve', adminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM feedbacks WHERE id = $1', [req.params.feedbackId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '反馈不存在' });
-        const newStatus = r.rows[0].status === 'resolved' ? 'pending' : 'resolved';
-        await pool.query('UPDATE feedbacks SET status = $1 WHERE id = $2', [newStatus, req.params.feedbackId]);
-        res.json({ success: true, status: newStatus });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== 举报 ==========
-
-// 上传举报图片用
-const reportUpload = multer({
-    storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
-    fileFilter: (req, file, cb) => {
-        if (/image\/.*/.test(file.mimetype)) cb(null, true);
-        else cb(new Error('Only images allowed'), false);
-    }
-});
-
-app.post('/api/report', authMiddleware, reportUpload.array('images', 5), async (req, res) => {
-    try {
-        const ip = req.ip || req.connection.remoteAddress;
-        if (!checkRateLimit('report_' + ip, 5000)) {
-            return res.status(429).json({ error: '举报太频繁，请稍后再试' });
-        }
-
-        const { targetUserId, content } = req.body;
-        if (!targetUserId) return res.status(400).json({ error: '请指定被举报用户' });
-        if (!content || content.trim().length < 2) return res.status(400).json({ error: '举报内容至少2个字符' });
-        if (targetUserId === req.user.id) return res.status(400).json({ error: '不能举报自己' });
-
-        // 检查目标用户是否存在
-        const targetR = await pool.query('SELECT id FROM users WHERE id = $1', [targetUserId]);
-        if (targetR.rows.length === 0) return res.status(404).json({ error: '目标用户不存在' });
-
-        const reportId = genId('rp');
-        const now = Date.now();
-
-        // 处理上传的图片
-        const images = (req.files || []).map(f => '/uploads/' + f.filename);
-
-        await pool.query(
-            'INSERT INTO reports (id, reporter_id, target_user_id, content, images, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-            [reportId, req.user.id, targetUserId, content.trim(), JSON.stringify(images), 'pending', now]
-        );
-
-        // 通知所有在线管理员
-        const sockets = io.sockets.sockets;
-        for (const [sid, socket] of sockets) {
-            if (socket.role === 'super_admin' || socket.role === 'admin') {
-                socket.emit('new-report', {
-                    id: reportId,
-                    reporterId: req.user.id,
-                    reporterNickname: req.user.nickname,
-                    reporterAvatarColor: req.user.avatar_color,
-                    reporterAvatarText: req.user.avatar_text,
-                    targetUserId: targetUserId,
-                    content: content.trim(),
-                    images,
-                    status: 'pending',
-                    createdAt: now
-                });
-            }
-        }
-
-        res.json({ success: true, id: reportId });
-    } catch (e) {
-        res.status(500).json({ error: '举报失败: ' + e.message });
-    }
-});
-
-app.get('/api/admin/reports', adminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM reports ORDER BY created_at DESC');
-        if (r.rows.length === 0) return res.json([]);
-
-        // 批量收集所有用户ID，一次性查询
-        const userIdSet = new Set();
-        r.rows.forEach(rp => {
-            if (rp.reporter_id) userIdSet.add(rp.reporter_id);
-            if (rp.target_user_id) userIdSet.add(rp.target_user_id);
-        });
-        const userIds = [...userIdSet];
-        const usersR = userIds.length > 0
-            ? await pool.query('SELECT id, nickname, avatar_color, avatar_text FROM users WHERE id = ANY($1)', [userIds])
-            : { rows: [] };
-
-        const userMap = {};
-        usersR.rows.forEach(u => {
-            userMap[u.id] = u;
-        });
-
-        const reports = r.rows.map(rp => ({
-            id: rp.id,
-            reporterId: rp.reporter_id,
-            reporterNickname: userMap[rp.reporter_id]?.nickname || '未知用户',
-            reporterAvatarColor: userMap[rp.reporter_id]?.avatar_color || '#999',
-            reporterAvatarText: userMap[rp.reporter_id]?.avatar_text || '?',
-            targetUserId: rp.target_user_id,
-            targetNickname: userMap[rp.target_user_id]?.nickname || '未知用户',
-            targetAvatarColor: userMap[rp.target_user_id]?.avatar_color || '#999',
-            targetAvatarText: userMap[rp.target_user_id]?.avatar_text || '?',
-            content: rp.content,
-            images: rp.images || [],
-            status: rp.status,
-            createdAt: rp.created_at
-        }));
-        res.json(reports);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/admin/report/:reportId/resolve', adminMiddleware, async (req, res) => {
-    try {
-        const r = await pool.query('SELECT * FROM reports WHERE id = $1', [req.params.reportId]);
-        if (r.rows.length === 0) return res.status(404).json({ error: '举报不存在' });
-        const newStatus = r.rows[0].status === 'resolved' ? 'pending' : 'resolved';
-        await pool.query('UPDATE reports SET status = $1 WHERE id = $2', [newStatus, req.params.reportId]);
-        res.json({ success: true, status: newStatus });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ========== Block / Unblock ==========
-
-app.post('/api/block/:userId', authMiddleware, async (req, res) => {
-    try {
-        const targetR = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
-        if (targetR.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
-        if (req.params.userId === req.user.id) return res.status(400).json({ error: '不能拉黑自己' });
-
-        const blocked = req.user.blocked_users || [];
-        if (blocked.includes(req.params.userId)) return res.json({ success: true, message: '已拉黑该用户' });
-
-        await pool.query(
-            'UPDATE users SET blocked_users = blocked_users || $1::jsonb WHERE id = $2',
-            [JSON.stringify([req.params.userId]), req.user.id]
-        );
-        res.json({ success: true, message: `已拉黑 ${targetR.rows[0].nickname}` });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/api/unblock/:userId', authMiddleware, async (req, res) => {
-    try {
-        await pool.query(
-            'UPDATE users SET blocked_users = blocked_users - $1 WHERE id = $2',
-            [req.params.userId, req.user.id]
-        );
-        res.json({ success: true, message: '已取消拉黑' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.get('/api/blocked', authMiddleware, async (req, res) => {
-    res.json({ blockedUsers: req.user.blocked_users || [] });
-});
-
-// ========== Socket.IO ==========
-
-const onlineUsers = {};
+const onlineUsers = {}; // userId -> socketId
 
 io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id);
 
-    socket.on('auth', async (token) => {
-        try {
-            const r = await pool.query('SELECT * FROM users WHERE id = $1', [token]);
-            if (r.rows.length === 0) { socket.emit('auth-error', '无效token'); return; }
-            const user = r.rows[0];
-            if (user.banned) {
-                socket.emit('banned', { message: '账号已被封禁' });
-                socket.disconnect(true);
-                return;
-            }
-
-            socket.userId = user.id;
-            socket.userNickname = user.nickname;
-            socket.userAvatarColor = user.avatar_color;
-            socket.userAvatarText = user.avatar_text;
-            socket.userAvatarUrl = user.avatar_url || null;
-            socket.role = user.role || 'user';
-            socket.bubbleStyle = user.bubble_style || 0;
-            onlineUsers[user.id] = socket.id;
-
-            const groupsR = await pool.query("SELECT * FROM groups_t WHERE members @> $1::jsonb", [JSON.stringify([user.id])]);
-            groupsR.rows.forEach(g => socket.join(g.id));
-
-            socket.broadcast.emit('user-online', { userId: user.id, nickname: user.nickname });
-            io.emit('online-list', Object.keys(onlineUsers));
-
-            console.log(`User ${user.nickname} (${user.id}) authenticated`);
-        } catch (e) {
-            socket.emit('auth-error', '认证失败');
+    // Authenticate socket
+    socket.on('auth', (token) => {
+        const users = loadJSON('users.json');
+        const user = users.find(u => u.id === token);
+        if (!user) {
+            socket.emit('auth-error', '无效token');
+            return;
         }
+        if (user.banned) {
+            socket.emit('banned', { message: '账号已被封禁' });
+            socket.disconnect(true);
+            return;
+        }
+
+        socket.userId = user.id;
+        socket.userNickname = user.nickname;
+        onlineUsers[user.id] = socket.id;
+
+        // Join user's groups
+        const groups = loadJSON('groups.json');
+        groups.forEach(g => {
+            if (g.members.includes(user.id)) socket.join(g.id);
+        });
+
+        // Notify others of online status
+        socket.broadcast.emit('user-online', { userId: user.id, nickname: user.nickname });
+        io.emit('online-list', Object.keys(onlineUsers));
+
+        console.log(`User ${user.nickname} (${user.id}) authenticated`);
     });
 
-    socket.on('private-message', async (data) => {
+    // Private message
+    socket.on('private-message', (data) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
 
-        // 消息长度限制
-        if (!content || (typeof content === 'string' && content.length > 5000)) return;
-
-        // 频率限制：每秒最多3条
-        const rateKey = 'msg_' + socket.userId;
-        if (!checkRateLimit(rateKey, 333)) return;
-
-        const [fromR, toR] = await Promise.all([
-            pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]),
-            pool.query('SELECT * FROM users WHERE id = $1', [to])
-        ]);
-        const fromUser = fromR.rows[0];
-        const toUser = toR.rows[0];
-
-        // 禁言检查
-        if (fromUser.muted_until !== null && fromUser.muted_until > Date.now()) {
-            let muteMsg = '你已被禁言，无法发送消息。';
-            if (fromUser.muted_until === 253402300799000) {
-                muteMsg = '你已被永久禁言，无法发送消息。';
-            } else {
-                const remaining = Math.ceil((fromUser.muted_until - Date.now()) / 3600000);
-                muteMsg = `你已被禁言，剩余约 ${remaining} 小时。`;
-            }
-            socket.emit('muted-error', { message: muteMsg });
-            return;
-        }
-
-        if (fromUser?.blocked_users?.includes(to)) {
-            socket.emit('blocked-error', { message: '你已拉黑该用户，无法发送消息' });
-            return;
-        }
-        if (toUser?.blocked_users?.includes(socket.userId)) {
-            socket.emit('blocked-error', { message: '对方已将你拉黑，无法发送消息' });
-            return;
-        }
-
-        const msgId = genId('msg');
-        const now = Date.now();
-        await pool.query(
-            "INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read) VALUES ($1,'private',$2,$3,$4,$5,$6,false)",
-            [msgId, socket.userId, to, content, messageType || 'text', now]
-        );
-
-        const msgObj = {
-            id: msgId, type: 'private', from: socket.userId, to, content,
-            messageType: messageType || 'text', timestamp: now, read: false,
-            fromNickname: fromUser?.nickname, fromAvatarColor: fromUser?.avatar_color,
-            fromAvatarText: fromUser?.avatar_text, fromAvatarUrl: fromUser?.avatar_url || null,
-            fromBubbleStyle: fromUser?.bubble_style || 0
+        const messages = loadJSON('messages.json');
+        const msg = {
+            id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            type: 'private',
+            from: socket.userId,
+            to,
+            content,
+            messageType: messageType || 'text',
+            timestamp: Date.now(),
+            read: false
         };
+        messages.push(msg);
+        saveJSON('messages.json', messages);
 
+        const users = loadJSON('users.json');
+        const fromUser = users.find(u => u.id === socket.userId);
+
+        // Send to recipient if online
         const recipientSocketId = onlineUsers[to];
         if (recipientSocketId) {
-            io.to(recipientSocketId).emit('private-message', msgObj);
+            io.to(recipientSocketId).emit('private-message', {
+                ...msg,
+                fromNickname: fromUser?.nickname,
+                fromAvatarColor: fromUser?.avatarColor,
+                fromAvatarText: fromUser?.avatarText
+            });
         }
 
-        socket.emit('private-message-sent', msgObj);
+        // Send back to sender for confirmation
+        socket.emit('private-message-sent', msg);
     });
 
-    socket.on('group-message', async (data) => {
+    // Group message
+    socket.on('group-message', (data) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
 
-        // 消息长度限制
-        if (!content || (typeof content === 'string' && content.length > 5000)) return;
+        const messages = loadJSON('messages.json');
+        const msg = {
+            id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            type: 'group',
+            from: socket.userId,
+            to,
+            content,
+            messageType: messageType || 'text',
+            timestamp: Date.now(),
+            readBy: [socket.userId]
+        };
+        messages.push(msg);
+        saveJSON('messages.json', messages);
 
-        // 频率限制：每秒最多3条
-        const rateKey = 'msg_' + socket.userId;
-        if (!checkRateLimit(rateKey, 333)) return;
+        const users = loadJSON('users.json');
+        const fromUser = users.find(u => u.id === socket.userId);
 
-        // 查询用户信息（禁言检查需要）
-        const fromR = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
-        const fromUser = fromR.rows[0];
-
-        // 禁言检查
-        if (fromUser.muted_until !== null && fromUser.muted_until > Date.now()) {
-            let muteMsg = '你已被禁言，无法发送消息。';
-            if (fromUser.muted_until === 253402300799000) {
-                muteMsg = '你已被永久禁言，无法发送消息。';
-            } else {
-                const remaining = Math.ceil((fromUser.muted_until - Date.now()) / 3600000);
-                muteMsg = `你已被禁言，剩余约 ${remaining} 小时。`;
-            }
-            socket.emit('muted-error', { message: muteMsg });
-            return;
-        }
-
-        const msgId = genId('msg');
-        const now = Date.now();
-        await pool.query(
-            "INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, read_by) VALUES ($1,'group',$2,$3,$4,$5,$6,$7)",
-            [msgId, socket.userId, to, content, messageType || 'text', now, JSON.stringify([socket.userId])]
-        );
-
+        // Broadcast to group
         io.to(to).emit('group-message', {
-            id: msgId, type: 'group', from: socket.userId, to, content,
-            messageType: messageType || 'text', timestamp: now, readBy: [socket.userId],
-            fromNickname: fromUser?.nickname, fromAvatarColor: fromUser?.avatar_color,
-            fromAvatarText: fromUser?.avatar_text, fromAvatarUrl: fromUser?.avatar_url || null,
-            fromBubbleStyle: fromUser?.bubble_style || 0
+            ...msg,
+            fromNickname: fromUser?.nickname,
+            fromAvatarColor: fromUser?.avatarColor,
+            fromAvatarText: fromUser?.avatarText
         });
     });
 
+    // Typing indicator
     socket.on('typing', (data) => {
         const { to, type } = data;
         if (type === 'private') {
@@ -1709,12 +856,15 @@ io.on('connection', (socket) => {
         const { to, type } = data;
         if (type === 'private') {
             const recipientSocketId = onlineUsers[to];
-            if (recipientSocketId) io.to(recipientSocketId).emit('stop-typing', { from: socket.userId });
+            if (recipientSocketId) {
+                io.to(recipientSocketId).emit('stop-typing', { from: socket.userId });
+            }
         } else if (type === 'group') {
             socket.to(to).emit('stop-typing', { from: socket.userId });
         }
     });
 
+    // Disconnect
     socket.on('disconnect', () => {
         if (socket.userId) {
             delete onlineUsers[socket.userId];
@@ -1725,75 +875,48 @@ io.on('connection', (socket) => {
     });
 });
 
-// ========== Seed Data ==========
-
-async function seedData() {
-    const client = await pool.connect();
-    try {
-        // System user
-        const sysR = await client.query("SELECT id FROM users WHERE id = 'u_system'");
-        if (sysR.rows.length === 0) {
-            await client.query(
-                "INSERT INTO users (id, username, password, nickname, bio, avatar_color, avatar_text, role, banned, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'system',false,$8)",
-                ['u_system', 'system', bcrypt.hashSync('system', 10), '系统通知', '飞友之家官方系统通知', '#667eea', '飞', Date.now() - 86400000 * 365]
-            );
-        }
-
-        // Super admin
-        const adminR = await client.query("SELECT id FROM users WHERE role = 'super_admin'");
-        if (adminR.rows.length === 0) {
-            await client.query(
-                "INSERT INTO users (id, username, password, nickname, bio, avatar_color, avatar_text, role, points, bubble_style, banned, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'super_admin',$8,$9,false,$10)",
-                ['u_admin', 'admin', bcrypt.hashSync('admin123', 10), '管理员', '飞友之家平台管理员', '#f5576c', '管', 99999, 4, Date.now()]
-            );
-            console.log('Admin account created: admin / admin123');
-        }
-
-        // Public group
-        const pubR = await client.query("SELECT id FROM groups_t WHERE id = 'g_public'");
-        if (pubR.rows.length === 0) {
-            const members = ['u_system', 'u_admin'];
-            await client.query(
-                "INSERT INTO groups_t (id, name, description, avatar_color, avatar_text, members, created_at) VALUES ('g_public','飞友之家大厅','所有人都在这里聊天！','#667eea','厅',$1,$2)",
-                [JSON.stringify(members), Date.now()]
-            );
-        }
-
-        // Donation config
-        const donR = await client.query("SELECT id FROM donations WHERE id = 'donation_config'");
-        if (donR.rows.length === 0) {
-            await client.query("INSERT INTO donations (id, wechat, alipay) VALUES ('donation_config','','')");
-        }
-
-        console.log('Seed data initialized');
-    } catch (e) {
-        console.error('Seed error:', e.message);
-    } finally {
-        client.release();
-    }
-}
-
 // ========== Start Server ==========
 
-async function start() {
-    try {
-        await initTables();
-        await seedData();
-        console.log('Database: PostgreSQL (Supabase) - connected');
-    } catch (e) {
-        console.error('Database init failed:', e.message);
-        console.error('App will start without database connection.');
-    }
-
-    server.listen(PORT, '0.0.0.0', () => {
-        console.log(`飞友之家 server running on port ${PORT}`);
-    });
+// Create admin account if not exists
+const users = loadJSON('users.json');
+if (!users.find(u => u.role === 'admin')) {
+    const admin = {
+        id: 'u_admin',
+        username: 'admin',
+        password: bcrypt.hashSync('admin123', 10),
+        nickname: '管理员',
+        bio: '聊聊平台管理员',
+        avatarColor: '#f5576c',
+        avatarText: '管',
+        role: 'admin',
+        banned: false,
+        createdAt: Date.now()
+    };
+    users.push(admin);
+    // Add admin to public group
+    const groups = loadJSON('groups.json');
+    const pubGroup = groups.find(g => g.id === 'g_public');
+    if (pubGroup) pubGroup.members.push(admin.id);
+    saveJSON('groups.json', groups);
+    saveJSON('users.json', users);
+    console.log('Admin account created: admin / admin123');
 }
 
-start().catch(e => {
-    console.error('Start failed:', e.message);
-    // Still try to start the server anyway
-    server.listen(PORT, '0.0.0.0', () => {
-        console.log(`飞友之家 server running on port ${PORT} (fallback mode)`);
-    });
+server.listen(PORT, '0.0.0.0', () => {
+    const os = require('os');
+    const nets = os.networkInterfaces();
+    let localIP = 'localhost';
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal) {
+                localIP = net.address;
+                break;
+            }
+        }
+    }
+    console.log(`聊聊 ChatSpace server running!`);
+    console.log(`  本机访问: http://localhost:${PORT}`);
+    console.log(`  局域网访问: http://${localIP}:${PORT}`);
+    console.log(`  管理员账号: admin / admin123`);
+    console.log(`  同一WiFi下的手机/其他电脑用局域网地址即可访问`);
 });
