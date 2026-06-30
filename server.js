@@ -75,6 +75,7 @@ function userToJSON(u) {
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
         avatarColor: u.avatar_color, avatarText: u.avatar_text,
         avatarUrl: u.avatar_url || null, role: u.role,
+        birthday: u.birthday || '', gender: u.gender || '',
         points: u.points || 0, lastCheckinDate: u.last_checkin_date || null,
         bubbleStyle: u.bubble_style || 0, createdAt: u.created_at,
         banned: u.banned || false
@@ -125,7 +126,7 @@ function superAdminMiddleware(req, res, next) {
 // Register
 app.post('/api/register', async (req, res) => {
     try {
-        const { username, password, nickname, bio } = req.body;
+        const { username, password, nickname, bio, birthday, gender } = req.body;
         const ip = req.ip || req.connection.remoteAddress;
         if (!checkRateLimit('reg_' + ip, 3000)) {
             return res.status(429).json({ error: '注册太频繁，请稍后再试' });
@@ -146,8 +147,8 @@ app.post('/api/register', async (req, res) => {
         const now = Date.now();
 
         await pool.query(
-            'INSERT INTO users (id, username, password, nickname, bio, avatar_color, avatar_text, role, points, bubble_style, banned, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
-            [uid, username, hashedPw, nick, bio || '', avatarColor, avatarText, 'user', 0, 0, false, now]
+            'INSERT INTO users (id, username, password, nickname, bio, birthday, gender, avatar_color, avatar_text, role, points, bubble_style, banned, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)',
+            [uid, username, hashedPw, nick, bio || '', birthday || '', gender || '', avatarColor, avatarText, 'user', 0, 0, false, now]
         );
 
         // Auto-add to public group
@@ -162,7 +163,7 @@ app.post('/api/register', async (req, res) => {
         res.json({
             success: true,
             token: uid,
-            user: { id: uid, username, nickname: nick, bio: bio || '', avatarColor, avatarText, role: 'user', points: 0, lastCheckinDate: null, bubbleStyle: 0, createdAt: now }
+            user: { id: uid, username, nickname: nick, bio: bio || '', birthday: birthday || '', gender: gender || '', avatarColor, avatarText, role: 'user', points: 0, lastCheckinDate: null, bubbleStyle: 0, createdAt: now }
         });
     } catch (e) {
         res.status(500).json({ error: '注册失败: ' + e.message });
@@ -216,18 +217,40 @@ app.get('/api/me', authMiddleware, async (req, res) => {
 // Update profile
 app.put('/api/profile', authMiddleware, async (req, res) => {
     try {
-        const { nickname, bio } = req.body;
+        const { nickname, bio, birthday, gender } = req.body;
+        const updates = [];
+        const params = [];
+        let idx = 1;
+
         if (nickname) {
-            await pool.query(
-                'UPDATE users SET nickname = $1, avatar_text = $2, bio = COALESCE($3, bio) WHERE id = $4',
-                [nickname, nickname.slice(0, 1).toUpperCase(), bio, req.user.id]
-            );
-        } else {
-            await pool.query('UPDATE users SET bio = COALESCE($1, bio) WHERE id = $2', [bio, req.user.id]);
+            updates.push(`nickname = $${idx}, avatar_text = $${idx + 1}`);
+            params.push(nickname, nickname.slice(0, 1).toUpperCase());
+            idx += 2;
         }
+        if (bio !== undefined) {
+            updates.push(`bio = $${idx}`);
+            params.push(bio);
+            idx += 1;
+        }
+        if (birthday !== undefined) {
+            updates.push(`birthday = $${idx}`);
+            params.push(birthday);
+            idx += 1;
+        }
+        if (gender !== undefined) {
+            updates.push(`gender = $${idx}`);
+            params.push(gender);
+            idx += 1;
+        }
+
+        if (updates.length > 0) {
+            params.push(req.user.id);
+            await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+        }
+
         const r = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
         const u = r.rows[0];
-        res.json({ success: true, user: { id: u.id, nickname: u.nickname, bio: u.bio, avatarColor: u.avatar_color, avatarText: u.avatar_text } });
+        res.json({ success: true, user: userToJSON(u) });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1066,10 +1089,9 @@ app.get('/api/user/:userId', authMiddleware, async (req, res) => {
             [user.id]
         );
 
+        const userJSON = userToJSON(user);
         res.json({
-            id: user.id, username: user.username, nickname: user.nickname,
-            bio: user.bio, avatarColor: user.avatar_color, avatarText: user.avatar_text,
-            avatarUrl: user.avatar_url || null, role: user.role, createdAt: user.created_at,
+            ...userJSON,
             moments: momentsR.rows.map(m => ({
                 id: m.id, content: m.content, images: m.images || [],
                 likes: m.likes || [], comments: m.comments || [], createdAt: m.created_at
