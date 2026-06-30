@@ -2022,6 +2022,27 @@ input, textarea { font-family: inherit; }
     padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
     font-size: 14px; width: 100%; box-sizing: border-box; background: #fff;
 }
+
+/* 禁言状态显示 */
+.admin-user-muted {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background: #fff3cd;
+    color: #856404;
+    margin-left: 6px;
+}
+.admin-user-muted.permanent {
+    background: #f8d7da;
+    color: #721c24;
+}
+.mute-option-btn:hover {
+    background: var(--primary-light) !important;
+    border-color: var(--primary) !important;
+    color: var(--primary) !important;
+}
 .profile-info-edit { margin-top: 12px; max-width: 300px; margin-left: auto; margin-right: auto; text-align: left; }
 .profile-info-view { margin-top: 12px; max-width: 300px; margin-left: auto; margin-right: auto; text-align: left; }
 .profile-info-row {
