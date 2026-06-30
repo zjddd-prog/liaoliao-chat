@@ -676,6 +676,7 @@ a, button, div, span, p {
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
         background: rgba(255,255,255,0.9);
+        z-index: 35;
     }
 }
 
@@ -749,7 +750,8 @@ a, button, div, span, p {
     transition: var(--transition);
 }
 .chat-send-btn:hover { transform: scale(1.05); }
-.chat-send-btn:disabled { opacity: 0.5; }
+.chat-send-btn:active { transform: scale(0.92); transition: transform 0.1s; }
+.chat-send-btn:disabled { opacity: 0.4; transform: scale(1); cursor: not-allowed; }
 
 /* ========== Emoji Panel ========== */
 .emoji-panel {
@@ -1461,6 +1463,7 @@ a, button, div, span, p {
         position: relative;
         z-index: 30;
         gap: 6px;
+        will-change: transform;
     }
     .chat-input {
         font-size: 16px;
@@ -1645,6 +1648,93 @@ a, button, div, span, p {
     .bubble-item { padding: 8px 10px; gap: 8px; }
     .bubble-preview { min-width: 56px; }
     .bubble-name { font-size: 12px; }
+}
+
+/* ========== 平板端 (iPad / 768-1024px) ========== */
+@media (min-width: 769px) and (max-width: 1024px) {
+    /* 平板端布局调整为类似手机端但保留侧边栏 */
+    .main-app { height: 100dvh; }
+
+    .sidebar {
+        width: 72px;
+        min-width: 72px;
+    }
+    .nav-item { width: 64px; min-height: 52px; padding: 4px 0; }
+    .nav-item svg { width: 22px; height: 22px; }
+    .nav-label { font-size: 9px; }
+
+    .list-panel { width: 280px; }
+
+    /* 平板聊天区域优化 */
+    .chat-header { padding: 12px 16px; }
+    .chat-back-btn {
+        display: flex;
+        min-width: 44px; min-height: 44px; width: 44px; height: 44px;
+    }
+    .chat-header-report-btn {
+        min-width: 44px; min-height: 44px; width: 44px; height: 44px;
+    }
+
+    .messages-area {
+        padding: 14px 12px;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+    .msg-row { max-width: 65%; }
+    .msg-bubble { font-size: 14px; }
+
+    /* 平板输入区域 */
+    .chat-input-area {
+        padding: 10px 14px;
+        padding-bottom: max(10px, env(safe-area-inset-bottom, 10px));
+        gap: 8px;
+    }
+    .chat-input {
+        font-size: 16px;
+        min-height: 40px;
+        border-radius: 20px;
+        -webkit-appearance: none;
+        appearance: none;
+    }
+    .chat-send-btn {
+        width: 44px; height: 44px;
+        min-width: 44px; min-height: 44px;
+    }
+    .chat-tool-btn {
+        width: 40px; height: 40px;
+        min-width: 40px; min-height: 40px;
+    }
+
+    /* 平板端触控优化 */
+    .chat-item, .contact-item, .discover-user-card {
+        transition: background 0.15s;
+        -webkit-tap-highlight-color: transparent;
+    }
+    .chat-item:active, .contact-item:active { background: var(--bg); }
+
+    /* 滚动优化 */
+    .messages-area, .chat-list, .list-panel, .contacts-list,
+    .discover-content, .moments-list {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+    }
+
+    /* Modal 适配 */
+    .modal {
+        width: 540px;
+        max-width: 90%;
+    }
+
+    /* 按钮触摸目标 */
+    .btn-primary { min-height: 44px; }
+    .btn-sm { min-height: 40px; min-width: 44px; }
+    .btn-secondary { min-height: 40px; }
+}
+
+/* 平板横屏 (1024px+) — 使用更大的触控目标 */
+@media (min-width: 1025px) {
+    .chat-tool-btn { min-width: 40px; min-height: 40px; }
+    .chat-send-btn { min-width: 44px; min-height: 44px; }
 }
 
 /* ========== 反馈/设置 按钮 ========== */
