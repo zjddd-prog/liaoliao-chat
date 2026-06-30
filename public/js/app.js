@@ -436,7 +436,20 @@ const App = {
         document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
         document.getElementById(`view-${view}`)?.classList.remove('hidden');
 
-        if (view === 'chats') this.renderChatList();
+        if (view === 'chats') {
+            // 移动端：确保返回时显示聊天列表而非旧的聊天详情
+            if (window.innerWidth <= 768) {
+                const detailPanel = document.getElementById('chat-detail');
+                const listPanel = document.querySelector('.list-panel');
+                if (detailPanel) detailPanel.classList.add('hidden');
+                if (listPanel) listPanel.classList.remove('hidden');
+                // 如果当前没在聊天中，重置状态
+                if (!this.currentChatId) {
+                    this.currentChatType = null;
+                }
+            }
+            this.renderChatList();
+        }
         else if (view === 'contacts') this.renderContacts();
         else if (view === 'moments') this.renderMoments();
         else if (view === 'discover') this.renderDiscover();
@@ -462,22 +475,30 @@ const App = {
     // ========== 聊天列表 ==========
 
     async renderChatList() {
+        const listEl = document.getElementById('chat-list');
+        // 首次渲染时显示骨架屏
+        if (!this._chatListLoaded && listEl.children.length === 0) {
+            listEl.innerHTML = `
+                <div class="loading-skeleton" style="padding:12px;">
+                    ${[1,2,3,4,5].map(() => `
+                        <div style="display:flex;align-items:center;gap:12px;padding:14px;margin-bottom:4px;border-radius:8px;background:var(--card-bg);">
+                            <div class="skeleton-avatar" style="width:46px;height:46px;border-radius:50%;background:var(--bg);"></div>
+                            <div style="flex:1;"><div style="height:14px;background:var(--bg);border-radius:4px;width:60%;margin-bottom:8px;"></div><div style="height:12px;background:var(--bg);border-radius:4px;width:80%;"></div></div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
         try {
-            // 并行批量获取所有数据
-            const [friends, groups, unread, lastMessages] = await Promise.all([
-                this.api('/api/friends'),
-                this.api('/api/groups'),
-                this.api('/api/messages/unread'),
-                this.api('/api/chats/last-messages')
-            ]);
+            // 单次请求获取全部数据（替代原来的4次请求）
+            const data = await this.api('/api/chat-list');
+            this._chatListLoaded = true;
 
             let items = [];
 
             // 好友聊天
-            friends.forEach(f => {
-                const isOnline = this.onlineUsers.includes(f.id);
-                const unreadCount = unread.private?.[f.id] || 0;
-                const lastMsg = lastMessages[f.id];
+            (data.friends || []).forEach(f => {
                 items.push({
                     type: 'private',
                     id: f.id,
@@ -485,18 +506,16 @@ const App = {
                     avatarColor: f.avatarColor,
                     avatarText: f.avatarText,
                     avatarUrl: f.avatarUrl,
-                    lastMsg: lastMsg ? lastMsg.content : '',
-                    time: lastMsg ? this.formatTime(lastMsg.timestamp) : '',
-                    unread: unreadCount,
-                    online: isOnline,
-                    ts: lastMsg ? lastMsg.timestamp : 0
+                    lastMsg: f.lastMsg ? f.lastMsg.content : '',
+                    time: f.lastMsg ? this.formatTime(f.lastMsg.timestamp) : '',
+                    unread: f.unread || 0,
+                    online: this.onlineUsers.includes(f.id),
+                    ts: f.lastMsg ? f.lastMsg.timestamp : 0
                 });
             });
 
             // 群聊
-            groups.forEach(g => {
-                const unreadCount = unread.group?.[g.id] || 0;
-                const lastMsg = lastMessages[g.id];
+            (data.groups || []).forEach(g => {
                 items.push({
                     type: 'group',
                     id: g.id,
@@ -504,12 +523,12 @@ const App = {
                     avatarColor: g.avatarColor,
                     avatarText: g.avatarText,
                     avatarUrl: null,
-                    lastMsg: lastMsg ? lastMsg.content : '',
-                    time: lastMsg ? this.formatTime(lastMsg.timestamp) : '',
-                    unread: unreadCount,
+                    lastMsg: g.lastMsg ? g.lastMsg.content : '',
+                    time: g.lastMsg ? this.formatTime(g.lastMsg.timestamp) : '',
+                    unread: g.unread || 0,
                     online: true,
                     memberCount: g.memberCount,
-                    ts: lastMsg ? lastMsg.timestamp : 0
+                    ts: g.lastMsg ? g.lastMsg.timestamp : 0
                 });
             });
 
@@ -518,14 +537,13 @@ const App = {
                 items = items.filter(item => item.name.toLowerCase().includes(this.chatSearchQuery));
             }
 
-            // 按最近消息时间排序（有未读的优先，然后按时间降序）
+            // 排序：有未读的优先，然后按时间降序
             items.sort((a, b) => {
                 if (a.unread > 0 && b.unread === 0) return -1;
                 if (a.unread === 0 && b.unread > 0) return 1;
                 return (b.ts || 0) - (a.ts || 0);
             });
 
-            const listEl = document.getElementById('chat-list');
             listEl.innerHTML = items.length === 0
                 ? `<div class="empty-state" style="padding:40px 20px;text-align:center;">
                     <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--text-light)" stroke-width="1.5" style="margin-bottom:16px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
@@ -562,6 +580,13 @@ const App = {
 
         } catch (e) {
             console.error('Failed to render chat list:', e);
+            // 失败时显示重试按钮
+            if (listEl.children.length === 0 || !this._chatListLoaded) {
+                listEl.innerHTML = `<div class="empty-state" style="padding:40px 20px;text-align:center;">
+                    <p style="margin-bottom:16px;color:var(--text-light);">加载失败，请检查网络</p>
+                    <button class="btn-primary btn-sm" onclick="App.renderChatList()">重试</button>
+                </div>`;
+            }
         }
     },
 
@@ -581,6 +606,8 @@ const App = {
         this.currentChatId = id;
         this.currentChatName = name;
         this._unreadBelow = 0;
+
+        const isMobile = window.innerWidth <= 768;
 
         // 构建聊天头部
         const header = `
@@ -602,8 +629,18 @@ const App = {
             </div>
         `;
 
-        // 消息区域
-        const messagesArea = `<div class="messages-area" id="messages-area"></div>`;
+        // 消息区域 + 骨架屏（立即显示，不等数据）
+        const messagesArea = `<div class="messages-area" id="messages-area">
+            <div class="loading-skeleton">
+                <div class="skeleton-msg skeleton-other"></div>
+                <div class="skeleton-msg skeleton-other short"></div>
+                <div class="skeleton-msg skeleton-self"></div>
+                <div class="skeleton-msg skeleton-other"></div>
+                <div class="skeleton-msg skeleton-self short"></div>
+                <div class="skeleton-msg skeleton-other"></div>
+                <div class="skeleton-msg skeleton-self"></div>
+            </div>
+        </div>`;
 
         // 输入区域
         const inputArea = `
@@ -634,9 +671,10 @@ const App = {
             <div class="emoji-panel hidden" id="emoji-panel"></div>
         `;
 
+        // 立即设置HTML（骨架屏可见，不等消息加载）
         document.getElementById('chat-detail').innerHTML = header + messagesArea + inputArea;
 
-        // 预创建滚动到底按钮（后续只切换可见性）
+        // 预创建滚动到底按钮
         const detailPanel = document.getElementById('chat-detail');
         let scrollBtn = document.getElementById('scroll-bottom-btn');
         if (!scrollBtn) {
@@ -649,7 +687,32 @@ const App = {
             detailPanel.appendChild(scrollBtn);
         }
 
-        // 加载消息历史
+        // 移动端：立即显示聊天面板（不等消息加载完）
+        if (isMobile) {
+            const listPanel = document.querySelector('.list-panel');
+            if (listPanel) listPanel.classList.add('hidden');
+            detailPanel.classList.remove('hidden');
+        }
+
+        // 高亮聊天列表当前项（桌面端需要更新；移动端列表已隐藏，仅标记active状态）
+        if (!isMobile) {
+            this.renderChatList();
+        } else {
+            // 移动端只更新active类，不重新请求数据
+            document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
+            // 简单标记当前激活项
+            const items = document.querySelectorAll('.chat-item');
+            items.forEach(item => {
+                const infoEl = item.querySelector('.chat-info');
+                if (infoEl && infoEl.getAttribute('onclick') && infoEl.getAttribute('onclick').includes(`'${type}','${id}'`)) {
+                    item.classList.add('active');
+                }
+            });
+        }
+
+        this.hideTyping();
+
+        // 后台加载消息（不阻塞UI）
         await this.loadMessages();
 
         // 绑定滚动监听
@@ -658,57 +721,65 @@ const App = {
             msgArea.addEventListener('scroll', () => this.updateScrollButton());
         }
 
-        // 高亮聊天列表当前项
-        this.renderChatList();
-        this.hideTyping();
-
-        // 手机端：隐藏聊天列表，显示聊天详情
-        if (window.innerWidth <= 768) {
-            const listPanel = document.querySelector('.list-panel');
-            const detailPanel = document.getElementById('chat-detail');
-            if (listPanel) listPanel.classList.add('hidden');
-            if (detailPanel) detailPanel.classList.remove('hidden');
-        }
-
-        // 自动聚焦输入框
+        // 自动聚焦输入框（延迟避免键盘弹出影响布局）
         setTimeout(() => {
             const chatInput = document.getElementById('chat-input');
-            if (chatInput) chatInput.focus();
-        }, 100);
+            if (chatInput && !isMobile) chatInput.focus();
+        }, isMobile ? 300 : 100);
     },
 
     async loadMessages() {
         const area = document.getElementById('messages-area');
-        // 显示加载中骨架屏
-        area.innerHTML = `
-            <div class="loading-skeleton">
-                <div class="skeleton-msg skeleton-other"></div>
-                <div class="skeleton-msg skeleton-other short"></div>
-                <div class="skeleton-msg skeleton-self"></div>
-                <div class="skeleton-msg skeleton-other"></div>
-                <div class="skeleton-msg skeleton-self short"></div>
-                <div class="skeleton-msg skeleton-other"></div>
-                <div class="skeleton-msg skeleton-self"></div>
-            </div>
-        `;
+        if (!area) return;
 
-        try {
-            const url = this.currentChatType === 'private'
-                ? `/api/messages/private/${this.currentChatId}`
-                : `/api/messages/group/${this.currentChatId}`;
-            const messages = await this.api(url);
+        // 如果不是骨架屏状态（已有消息内容），不覆盖
+        const hasSkeleton = area.querySelector('.loading-skeleton');
+        if (!hasSkeleton) {
+            area.innerHTML = `
+                <div class="loading-skeleton">
+                    <div class="skeleton-msg skeleton-other"></div>
+                    <div class="skeleton-msg skeleton-other short"></div>
+                    <div class="skeleton-msg skeleton-self"></div>
+                </div>
+            `;
+        }
 
-            area.innerHTML = '';
+        let retryCount = 0;
+        const maxRetries = 2;
 
-            messages.forEach(msg => {
-                const isSelf = msg.from === this.currentUser.id;
-                this.appendMessage(msg, isSelf ? 'self' : 'other');
-            });
+        while (retryCount <= maxRetries) {
+            try {
+                const url = this.currentChatType === 'private'
+                    ? `/api/messages/private/${this.currentChatId}`
+                    : `/api/messages/group/${this.currentChatId}`;
+                const messages = await this.api(url);
 
-            this.scrollToBottom(true);
-        } catch (e) {
-            console.error('Failed to load messages:', e);
-            area.innerHTML = '<div class="empty-state"><p>加载消息失败，请刷新重试</p></div>';
+                area.innerHTML = '';
+
+                if (messages.length === 0) {
+                    area.innerHTML = `<div class="empty-state"><p>${t('chat.startChat') || '开始聊天吧'}</p></div>`;
+                } else {
+                    messages.forEach(msg => {
+                        const isSelf = msg.from === this.currentUser.id;
+                        this.appendMessage(msg, isSelf ? 'self' : 'other');
+                    });
+                }
+
+                this.scrollToBottom(true);
+                return; // 成功，退出
+            } catch (e) {
+                retryCount++;
+                if (retryCount > maxRetries) {
+                    console.error('Failed to load messages:', e);
+                    area.innerHTML = `<div class="empty-state">
+                        <p>加载消息失败</p>
+                        <button class="btn-primary btn-sm" onclick="App.loadMessages()" style="margin-top:12px;">重试</button>
+                    </div>`;
+                } else {
+                    // 短暂延迟后重试
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            }
         }
     },
 
@@ -718,6 +789,11 @@ const App = {
         const listPanel = document.querySelector('.list-panel');
         if (listPanel) listPanel.classList.remove('hidden');
         if (detail) detail.classList.add('hidden');
+        // 重置聊天状态，下次打开switchView时不会残留
+        this.currentChatId = null;
+        this.currentChatType = null;
+        this.currentChatName = '';
+        this.hideTyping();
     },
 
     // ========== 发送消息 ==========
