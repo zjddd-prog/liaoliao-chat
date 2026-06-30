@@ -101,7 +101,7 @@ const I18N = {
         'profile.noMoments': { 'zh-CN': '暂无动态', en: 'No moments yet', ja: 'モーメントがありません', ko: '모먼트 없음' },
 
         // ---- 气泡商城 ----
-        'bubble.title': { 'zh-CN': '气泡商城 🎨', en: 'Bubble Shop 🎨', ja: 'バブルショップ 🎨', ko: '버블 상점 🎨' },
+        'bubble.title': { 'zh-CN': '气泡商城 ✈️', en: 'Bubble Shop ✈️', ja: 'バブルショップ ✈️', ko: '버블 상점 ✈️' },
         'bubble.desc': { 'zh-CN': '选择你喜欢的气泡样式，用积分兑换后即可使用。', en: 'Choose a bubble style and redeem with points.', ja: 'お気に入りのバブルスタイルを選択し、ポイントで交換できます。', ko: '좋아하는 버블 스타일을 선택하고 포인트로 교환하세요.' },
         'bubble.day': { 'zh-CN': '天', en: 'd', ja: '日', ko: '일' },
         'bubble.permanent': { 'zh-CN': '永久', en: 'Forever', ja: '永久', ko: '영구' },
@@ -111,7 +111,7 @@ const I18N = {
         'bubble.equip': { 'zh-CN': '装备', en: 'Equip', ja: '装備', ko: '장착' },
         'bubble.redeem': { 'zh-CN': '兑换', en: 'Redeem', ja: '交換', ko: '교환' },
         'bubble.noPoints': { 'zh-CN': '积分不足', en: 'Not enough points', ja: 'ポイント不足', ko: '포인트 부족' },
-        'bubble.crown': { 'zh-CN': '皇冠', en: 'Crown', ja: 'クラウン', ko: '크라운' },
+        'bubble.crown': { 'zh-CN': '王牌', en: 'Ace', ja: 'エース', ko: '에이스' },
         'bubble.sample': { 'zh-CN': '示例消息', en: 'Sample', ja: 'サンプル', ko: '샘플' },
         'bubble.expires': { 'zh-CN': '到期', en: 'Expires', ja: '期限', ko: '만료' },
 
@@ -267,8 +267,8 @@ const I18N = {
         'group.createFail': { 'zh-CN': '创建失败: ', en: 'Create failed: ', ja: '作成失敗: ', ko: '생성 실패: ' },
         'group.joinFail': { 'zh-CN': '加入失败: ', en: 'Join failed: ', ja: '参加失敗: ', ko: '참여 실패: ' },
         'group.passwordPrompt': { 'zh-CN': '请输入入群密码：', en: 'Enter group password:', ja: '参加パスワードを入力：', ko: '그룹 비밀번호 입력:' },
-        'bubble.shopTitle': { 'zh-CN': '气泡商城 🎨', en: 'Bubble Shop 🎨', ja: 'バブルショップ 🎨', ko: '버블 상점 🎨' },
-        'bubble.shopDesc': { 'zh-CN': '选择你喜欢的气泡样式。管理员免费使用全部气泡。', en: 'Choose a bubble style. Admins get all free.', ja: 'バブルスタイルを選択。管理者は全て無料。', ko: '버블 스타일을 선택하세요. 관리자는 모두 무료.' },
+        'bubble.shopTitle': { 'zh-CN': '气泡商城 ✈️', en: 'Bubble Shop ✈️', ja: 'バブルショップ ✈️', ko: '버블 상점 ✈️' },
+        'bubble.shopDesc': { 'zh-CN': '飞友专属航空主题气泡，积分兑换即可使用。', en: 'Aviation-themed bubbles. Redeem with points.', ja: '航空テーマのバブル。ポイントで交換。', ko: '항공 테마 버블. 포인트로 교환하세요.' },
         'bubble.current': { 'zh-CN': '当前气泡', en: 'Current', ja: '現在', ko: '현재' },
         'bubble.use': { 'zh-CN': '使用', en: 'Use', ja: '使用', ko: '사용' },
         'bubble.dayBtn': { 'zh-CN': '1天 🪙', en: '1d 🪙', ja: '1日 🪙', ko: '1일 🪙' },
