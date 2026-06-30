@@ -56,6 +56,9 @@ const I18N = {
         'chat.typing': { 'zh-CN': '正在输入', en: 'typing', ja: '入力中', ko: '입력 중' },
         'chat.imageText': { 'zh-CN': '[图片]', en: '[Image]', ja: '[画像]', ko: '[이미지]' },
         'chat.startChat': { 'zh-CN': '开始聊天吧', en: 'Start chatting', ja: 'チャットを始めましょう', ko: '채팅을 시작하세요' },
+        'chat.loadFailed': { 'zh-CN': '加载消息失败，请稍后重试', en: 'Failed to load messages, please retry', ja: 'メッセージの読み込みに失敗しました。再試行してください', ko: '메시지를 불러오지 못했습니다. 다시 시도해주세요' },
+        'chat.noMessagesHint': { 'zh-CN': '发送第一条消息', en: 'Send the first message', ja: '最初のメッセージを送信', ko: '첫 번째 메시지를 보내세요' },
+        'chat.loadTimeout': { 'zh-CN': '服务器响应较慢，请稍后重试', en: 'Server is responding slowly, please retry', ja: 'サーバーの応答が遅いです。再試行してください', ko: '서버 응답이 느립니다. 다시 시도해주세요' },
         'chat.noChats': { 'zh-CN': '暂无聊天，去发现页添加好友吧！', en: 'No chats yet. Go discover and add friends!', ja: 'チャットがありません。発見ページで友達を追加しましょう！', ko: '채팅이 없습니다. 발견 페이지에서 친구를 추가하세요!' },
         'chat.memberCount': { 'zh-CN': '人', en: '', ja: '人', ko: '명' },
 
