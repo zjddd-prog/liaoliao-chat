@@ -130,6 +130,10 @@ const App = {
         this.updatePointsDisplay();
         this.connectSocket();
         this.renderAll();
+        // 移动端键盘适配
+        if (window.innerWidth <= 768) {
+            this.setupMobileKeyboardHandler();
+        }
         // 显示管理员入口 (both super_admin and admin)
         if (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') {
             document.getElementById('nav-admin').classList.remove('hidden');
@@ -474,8 +478,23 @@ const App = {
 
     // ========== 聊天列表 ==========
 
-    async renderChatList() {
+    async renderChatList(forceRefresh = false) {
         const listEl = document.getElementById('chat-list');
+
+        // 缓存机制：移动端避免频繁请求，30秒内使用缓存
+        if (!forceRefresh && this._chatListCache && (Date.now() - this._chatListCacheTime) < 30000) {
+            // 如果有搜索筛选，需要重新过滤
+            if (this.chatSearchQuery) {
+                const filtered = this._chatListCache.filter(item =>
+                    item.name.toLowerCase().includes(this.chatSearchQuery)
+                );
+                this._renderChatListHTML(listEl, filtered);
+                return;
+            }
+            this._renderChatListHTML(listEl, this._chatListCache);
+            return;
+        }
+
         // 首次渲染时显示骨架屏
         if (!this._chatListLoaded && listEl.children.length === 0) {
             listEl.innerHTML = `
@@ -544,57 +563,65 @@ const App = {
                 return (b.ts || 0) - (a.ts || 0);
             });
 
-            listEl.innerHTML = items.length === 0
-                ? `<div class="empty-state" style="padding:40px 20px;text-align:center;">
-                    <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--text-light)" stroke-width="1.5" style="margin-bottom:16px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                    <p style="margin-bottom:16px;">${t('chat.noChats')}</p>
-                    <button class="btn-create-group btn-create-group-prompt" onclick="App.showCreateGroupModal()">
-                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
-                        <span>${t('group.create')}</span>
-                    </button>
-                </div>`
-                : items.map(item => {
-                    const isActive = this.currentChatType === item.type && this.currentChatId === item.id;
-                    const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
-                    const memberTag = item.type === 'group' ? `<span style="font-size:12px;color:var(--text-light);">(${item.memberCount}人)</span>` : '';
-                    const avatarHTML = item.avatarUrl
-                        ? `<img src="${item.avatarUrl}" alt="">`
-                        : item.avatarText;
-                    const nameClickHandler = item.type === 'private'
-                        ? `onclick="event.stopPropagation();App.viewProfile('${item.id}')"`
-                        : '';
-                    return `
-                        <div class="chat-item ${isActive ? 'active' : ''}">
-                            <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${item.id}')" title="查看主页">${avatarHTML}</div>
-                            <div class="chat-info" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
-                                <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${item.name}</span> ${memberTag}</div>
-                                <div class="chat-last-msg">${item.lastMsg || t('chat.startChat')}</div>
-                            </div>
-                            <div class="chat-meta" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
-                                <span class="chat-time">${item.time || ''}</span>
-                                ${item.unread > 0 ? `<span class="chat-unread">${item.unread}</span>` : ''}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+            // 保存到缓存（不含搜索过滤的原始数据）
+            this._chatListCache = [...items];
+            this._chatListCacheTime = Date.now();
+
+            this._renderChatListHTML(listEl, items);
 
         } catch (e) {
             console.error('Failed to render chat list:', e);
-            // 失败时显示重试按钮
             if (listEl.children.length === 0 || !this._chatListLoaded) {
                 listEl.innerHTML = `<div class="empty-state" style="padding:40px 20px;text-align:center;">
-                    <p style="margin-bottom:16px;color:var(--text-light);">加载失败，请检查网络</p>
-                    <button class="btn-primary btn-sm" onclick="App.renderChatList()">重试</button>
+                    <p style="margin-bottom:16px;color:var(--text-light);">${t('chat.loadFailed') || '加载失败，请检查网络'}</p>
+                    <button class="btn-primary btn-sm" onclick="App.renderChatList(true)">重试</button>
                 </div>`;
             }
         }
+    },
+
+    // 渲染聊天列表HTML（从缓存或新数据调用）
+    _renderChatListHTML(listEl, items) {
+        listEl.innerHTML = items.length === 0
+            ? `<div class="empty-state" style="padding:40px 20px;text-align:center;">
+                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--text-light)" stroke-width="1.5" style="margin-bottom:16px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                <p style="margin-bottom:16px;">${t('chat.noChats')}</p>
+                <button class="btn-create-group btn-create-group-prompt" onclick="App.showCreateGroupModal()">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+                    <span>${t('group.create')}</span>
+                </button>
+            </div>`
+            : items.map(item => {
+                const isActive = this.currentChatType === item.type && this.currentChatId === item.id;
+                const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
+                const memberTag = item.type === 'group' ? `<span style="font-size:12px;color:var(--text-light);">(${item.memberCount}人)</span>` : '';
+                const avatarHTML = item.avatarUrl
+                    ? `<img src="${item.avatarUrl}" alt="" loading="lazy">`
+                    : item.avatarText;
+                const nameClickHandler = item.type === 'private'
+                    ? `onclick="event.stopPropagation();App.viewProfile('${item.id}')"`
+                    : '';
+                return `
+                    <div class="chat-item ${isActive ? 'active' : ''}">
+                        <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${item.id}')" title="查看主页">${avatarHTML}</div>
+                        <div class="chat-info" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
+                            <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${item.name}</span> ${memberTag}</div>
+                            <div class="chat-last-msg">${item.lastMsg || t('chat.startChat')}</div>
+                        </div>
+                        <div class="chat-meta" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
+                            <span class="chat-time">${item.time || ''}</span>
+                            ${item.unread > 0 ? `<span class="chat-unread">${item.unread}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
     },
 
     // 防抖刷新聊天列表（socket事件触发时使用)
     refreshChatListDebounced() {
         clearTimeout(this._chatListDebounce);
         this._chatListDebounce = setTimeout(() => {
-            this.renderChatList();
+            this.renderChatList(true);  // 新消息来了强制刷新
             this.updateUnreadBadge();
         }, 300);
     },
@@ -721,11 +748,25 @@ const App = {
             msgArea.addEventListener('scroll', () => this.updateScrollButton());
         }
 
-        // 自动聚焦输入框（延迟避免键盘弹出影响布局）
+        // 自动聚焦输入框（移动端不自动聚焦，避免键盘遮挡聊天内容）
         setTimeout(() => {
             const chatInput = document.getElementById('chat-input');
             if (chatInput && !isMobile) chatInput.focus();
-        }, isMobile ? 300 : 100);
+        }, 100);
+    },
+
+    // iOS键盘适配：监听visualViewport变化，调整消息区域滚动
+    setupMobileKeyboardHandler() {
+        if (!window.visualViewport) return;
+        const initialHeight = window.innerHeight;
+        window.visualViewport.addEventListener('resize', () => {
+            const msgArea = document.getElementById('messages-area');
+            if (!msgArea || !this.currentChatId) return;
+            // 键盘弹起时滚动到底部
+            if (window.visualViewport.height < initialHeight * 0.8) {
+                requestAnimationFrame(() => this.scrollToBottom(true));
+            }
+        });
     },
 
     async loadMessages() {
