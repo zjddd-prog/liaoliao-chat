@@ -775,11 +775,11 @@ function cleanupExpiredBubble(user) {
 }
 
 const BUBBLE_STYLES = [
-    { id: 0, name: '经典白色', price: 0, class: 'bubble-default', desc: '默认聊天气泡' },
-    { id: 1, name: '薄荷清风', price: 30, class: 'bubble-mint', desc: '清新薄荷渐变' },
-    { id: 2, name: '星空紫韵', price: 60, class: 'bubble-purple', desc: '深邃星空渐变' },
-    { id: 3, name: '樱花轻语', price: 120, class: 'bubble-sakura', desc: '浪漫樱花飘落' },
-    { id: 4, name: '皇冠王者 👑', price: 180, class: 'bubble-crown', desc: '尊贵皇冠装饰特效' }
+    { id: 0, name: '晴空万里', price: 0, class: 'bubble-sky', desc: '广阔蓝天白云飘' },
+    { id: 1, name: '云霄巡航', price: 30, class: 'bubble-cloud', desc: '穿行于云层之上' },
+    { id: 2, name: '落日飞行', price: 60, class: 'bubble-sunset', desc: '暮色中的金色航线' },
+    { id: 3, name: '星辰航线', price: 120, class: 'bubble-stars', desc: '星空下闪耀的航迹' },
+    { id: 4, name: '王牌机长', price: 180, class: 'bubble-captain', desc: '金翼勋章·至尊荣耀' }
 ];
 
 app.get('/api/bubbles', authMiddleware, (req, res) => {
