@@ -5,74 +5,25 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
+const { pool, initTables } = require('./db');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*" },
-    maxHttpBufferSize: 5e6 // 5MB for image uploads
+    maxHttpBufferSize: 5e6
 });
 
 const PORT = process.env.PORT || 3000;
-const DATA_DIR = path.join(__dirname, 'data');
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 
-// Ensure directories exist
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-// ========== Data Store (JSON files) ==========
-
-function loadJSON(filename) {
-    const filepath = path.join(DATA_DIR, filename);
-    if (!fs.existsSync(filepath)) return [];
-    try { return JSON.parse(fs.readFileSync(filepath, 'utf8')); }
-    catch { return []; }
-}
-
-function saveJSON(filename, data) {
-    fs.writeFileSync(path.join(DATA_DIR, filename), JSON.stringify(data, null, 2));
-}
-
-// Initialize data files if empty
-if (loadJSON('users.json').length === 0) {
-    const defaultUsers = [
-        {
-            id: 'u_system',
-            username: 'system',
-            password: bcrypt.hashSync('system', 10),
-            nickname: '系统通知',
-            bio: '聊聊官方系统通知',
-            avatarColor: '#667eea',
-            avatarText: '聊',
-            role: 'system',
-            banned: false,
-            createdAt: Date.now() - 86400000 * 365
-        }
-    ];
-    saveJSON('users.json', defaultUsers);
-}
-if (loadJSON('messages.json').length === 0) saveJSON('messages.json', []);
-if (loadJSON('groups.json').length === 0) {
-    saveJSON('groups.json', [{
-        id: 'g_public',
-        name: '聊聊大厅',
-        description: '所有人都在这里聊天！',
-        avatarColor: '#667eea',
-        avatarText: '厅',
-        members: [],
-        createdAt: Date.now()
-    }]);
-}
-if (loadJSON('moments.json').length === 0) saveJSON('moments.json', []);
-if (loadJSON('friendships.json').length === 0) saveJSON('friendships.json', []);
 
 // ========== Middleware ==========
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Multer for image uploads
 const storage = multer.diskStorage({
     destination: UPLOADS_DIR,
     filename: (req, file, cb) => {
@@ -89,391 +40,369 @@ const upload = multer({
     }
 });
 
-// ========== Auth Helper ==========
+// ========== Auth Middleware (async) ==========
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
     const token = req.headers.authorization;
     if (!token) return res.status(401).json({ error: '未登录' });
-    const users = loadJSON('users.json');
-    const user = users.find(u => u.id === token);
-    if (!user) return res.status(401).json({ error: '无效token' });
-    if (user.banned) return res.status(403).json({ error: '账号已被封禁' });
-    req.user = user;
-    next();
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE id = $1', [token]);
+        if (result.rows.length === 0) return res.status(401).json({ error: '无效token' });
+        const user = result.rows[0];
+        if (user.banned) return res.status(403).json({ error: '账号已被封禁' });
+        req.user = {
+            id: user.id,
+            username: user.username,
+            nickname: user.nickname,
+            bio: user.bio,
+            avatarColor: user.avatar_color,
+            avatarText: user.avatar_text,
+            avatarUrl: user.avatar_url,
+            role: user.role,
+            points: user.points,
+            lastCheckinDate: user.last_checkin_date,
+            bubbleStyle: user.bubble_style,
+            bubblePurchases: user.bubble_purchases || {},
+            blockedUsers: user.blocked_users || [],
+            banned: user.banned,
+            mutedUntil: user.muted_until,
+            birthday: user.birthday,
+            gender: user.gender,
+            createdAt: user.created_at
+        };
+        next();
+    } catch (e) {
+        console.error('Auth error:', e.message);
+        res.status(500).json({ error: '服务器错误' });
+    }
 }
 
-function adminMiddleware(req, res, next) {
-    authMiddleware(req, res, () => {
+async function adminMiddleware(req, res, next) {
+    await authMiddleware(req, res, async () => {
         if (req.user.role !== 'admin') return res.status(403).json({ error: '需要管理员权限' });
         next();
     });
 }
 
+// Helper: wrap async route handlers
+function asyncHandler(fn) {
+    return (req, res, next) => fn(req, res, next).catch(next);
+}
+
 // ========== API Routes ==========
 
 // Register
-app.post('/api/register', (req, res) => {
+app.post('/api/register', asyncHandler(async (req, res) => {
     const { username, password, nickname, bio } = req.body;
     if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' });
     if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名2-20字符' });
     if (password.length < 4) return res.status(400).json({ error: '密码至少4位' });
 
-    const users = loadJSON('users.json');
-    if (users.find(u => u.username === username)) return res.status(400).json({ error: '用户名已存在' });
+    const existing = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: '用户名已存在' });
 
     const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140', '#a18cd1', '#fbc2eb'];
-    const newUser = {
-        id: 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-        username,
-        password: bcrypt.hashSync(password, 10),
-        nickname: nickname || username,
-        bio: bio || '',
-        avatarColor: colors[Math.floor(Math.random() * colors.length)],
-        avatarText: (nickname || username).slice(0, 1).toUpperCase(),
-        role: 'user',
-        banned: false,
-        createdAt: Date.now()
-    };
-    users.push(newUser);
-    saveJSON('users.json', users);
+    const id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const hashedPw = bcrypt.hashSync(password, 10);
+
+    await pool.query(
+        `INSERT INTO users (id, username, password, nickname, bio, avatar_color, avatar_text, role, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [id, username, hashedPw, nickname || username, bio || '',
+         colors[Math.floor(Math.random() * colors.length)], (nickname || username).slice(0, 1).toUpperCase(),
+         'user', Date.now()]
+    );
 
     // Auto-add to public group
-    const groups = loadJSON('groups.json');
-    const pubGroup = groups.find(g => g.id === 'g_public');
-    if (pubGroup && !pubGroup.members.includes(newUser.id)) {
-        pubGroup.members.push(newUser.id);
-        saveJSON('groups.json', groups);
+    const pubGroup = await pool.query("SELECT id, members FROM groups_t WHERE id = 'g_public'");
+    if (pubGroup.rows.length > 0) {
+        const members = pubGroup.rows[0].members || [];
+        if (!members.includes(id)) {
+            members.push(id);
+            await pool.query('UPDATE groups_t SET members = $1 WHERE id = $2', [JSON.stringify(members), 'g_public']);
+        }
     }
 
     res.json({
         success: true,
-        token: newUser.id,
-        user: {
-            id: newUser.id,
-            username: newUser.username,
-            nickname: newUser.nickname,
-            bio: newUser.bio,
-            avatarColor: newUser.avatarColor,
-            avatarText: newUser.avatarText,
-            role: newUser.role,
-            createdAt: newUser.createdAt
-        }
+        token: id,
+        user: { id, username, nickname: nickname || username, bio: bio || '',
+                avatarColor: colors[Math.floor(Math.random() * colors.length)],
+                avatarText: (nickname || username).slice(0, 1).toUpperCase(),
+                role: 'user', createdAt: Date.now() }
     });
-});
+}));
 
 // Login
-app.post('/api/login', (req, res) => {
+app.post('/api/login', asyncHandler(async (req, res) => {
     const { username, password } = req.body;
-    const users = loadJSON('users.json');
-    const user = users.find(u => u.username === username);
-    if (!user) return res.status(400).json({ error: '用户名不存在' });
+    const result = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+    if (result.rows.length === 0) return res.status(400).json({ error: '用户名不存在' });
+    const user = result.rows[0];
     if (user.banned) return res.status(403).json({ error: '账号已被封禁，请联系管理员' });
     if (!bcrypt.compareSync(password, user.password)) return res.status(400).json({ error: '密码错误' });
 
     res.json({
         success: true,
         token: user.id,
-        user: {
-            id: user.id,
-            username: user.username,
-            nickname: user.nickname,
-            bio: user.bio,
-            avatarColor: user.avatarColor,
-            avatarText: user.avatarText,
-            role: user.role,
-            createdAt: user.createdAt
-        }
+        user: { id: user.id, username: user.username, nickname: user.nickname, bio: user.bio,
+                avatarColor: user.avatar_color, avatarText: user.avatar_text,
+                avatarUrl: user.avatar_url, role: user.role, createdAt: user.created_at }
     });
-});
+}));
 
-// Get current user info
+// Get current user
 app.get('/api/me', authMiddleware, (req, res) => {
     const user = req.user;
-    res.json({
-        id: user.id,
-        username: user.username,
-        nickname: user.nickname,
-        bio: user.bio,
-        avatarColor: user.avatarColor,
-        avatarText: user.avatarText,
-        role: user.role,
-        createdAt: user.createdAt
-    });
+    res.json({ id: user.id, username: user.username, nickname: user.nickname, bio: user.bio,
+               avatarColor: user.avatarColor, avatarText: user.avatarText,
+               avatarUrl: user.avatarUrl, role: user.role, createdAt: user.createdAt });
 });
 
 // Update profile
-app.put('/api/profile', authMiddleware, (req, res) => {
+app.put('/api/profile', authMiddleware, asyncHandler(async (req, res) => {
     const { nickname, bio } = req.body;
-    const users = loadJSON('users.json');
-    const user = users.find(u => u.id === req.user.id);
-    if (!user) return res.status(404).json({ error: '用户不存在' });
+    const updates = [];
+    const values = [];
+    let idx = 1;
 
-    if (nickname) { user.nickname = nickname; user.avatarText = nickname.slice(0, 1).toUpperCase(); }
-    if (bio) user.bio = bio;
-    saveJSON('users.json', users);
+    if (nickname) {
+        updates.push(`nickname = $${idx}`, `avatar_text = $${idx + 1}`);
+        values.push(nickname, nickname.slice(0, 1).toUpperCase());
+        idx += 2;
+    }
+    if (bio) {
+        updates.push(`bio = $${idx}`);
+        values.push(bio);
+        idx++;
+    }
 
-    res.json({ success: true, user: { id: user.id, nickname: user.nickname, bio: user.bio, avatarColor: user.avatarColor, avatarText: user.avatarText } });
-});
+    if (updates.length === 0) return res.status(400).json({ error: '没有要更新的内容' });
+
+    values.push(req.user.id);
+    await pool.query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, values);
+
+    const updated = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+    const u = updated.rows[0];
+    res.json({ success: true, user: { id: u.id, nickname: u.nickname, bio: u.bio, avatarColor: u.avatar_color, avatarText: u.avatar_text } });
+}));
 
 // Upload avatar
-app.post('/api/avatar', authMiddleware, upload.single('avatar'), (req, res) => {
+app.post('/api/avatar', authMiddleware, upload.single('avatar'), asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: '请上传图片' });
-    const users = loadJSON('users.json');
-    const user = users.find(u => u.id === req.user.id);
-    user.avatarUrl = `/uploads/${req.file.filename}`;
-    saveJSON('users.json', users);
-    res.json({ success: true, avatarUrl: user.avatarUrl });
-});
+    const url = `/uploads/${req.file.filename}`;
+    await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [url, req.user.id]);
+    res.json({ success: true, avatarUrl: url });
+}));
 
-// Get all users (for discover/contacts)
-app.get('/api/users', authMiddleware, (req, res) => {
-    const users = loadJSON('users.json');
-    const friendships = loadJSON('friendships.json');
+// Get all users
+app.get('/api/users', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query(
+        `SELECT u.id, u.username, u.nickname, u.bio, u.avatar_color, u.avatar_text, u.avatar_url, u.banned, u.created_at,
+                EXISTS(SELECT 1 FROM friendships f WHERE f.status='accepted' AND
+                       ((f.user_id=$1 AND f.friend_id=u.id) OR (f.user_id=u.id AND f.friend_id=$1))) as is_friend
+         FROM users u WHERE u.id != $1 AND u.role != 'system'`,
+        [req.user.id]
+    );
+    res.json(result.rows.map(u => ({
+        id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
+        avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url,
+        banned: u.banned, createdAt: u.created_at, isFriend: u.is_friend
+    })));
+}));
 
-    const result = users
-        .filter(u => u.id !== req.user.id && u.role !== 'system')
-        .map(u => ({
-            id: u.id,
-            username: u.username,
-            nickname: u.nickname,
-            bio: u.bio,
-            avatarColor: u.avatarColor,
-            avatarText: u.avatarText,
-            avatarUrl: u.avatarUrl || null,
-            banned: u.banned,
-            createdAt: u.createdAt,
-            isFriend: friendships.some(f =>
-                ((f.userId === req.user.id && f.friendId === u.id) || (f.userId === u.id && f.friendId === req.user.id)) && f.status === 'accepted'
-            )
-        }));
-
-    res.json(result);
-});
-
-// Get friends list
-app.get('/api/friends', authMiddleware, (req, res) => {
-    const users = loadJSON('users.json');
-    const friendships = loadJSON('friendships.json');
-
-    const friendIds = friendships
-        .filter(f => (f.userId === req.user.id || f.friendId === req.user.id) && f.status === 'accepted')
-        .map(f => f.userId === req.user.id ? f.friendId : f.userId);
-
-    const friends = friendIds.map(fid => {
-        const u = users.find(u => u.id === fid);
-        if (!u) return null;
-        return {
-            id: u.id,
-            username: u.username,
-            nickname: u.nickname,
-            bio: u.bio,
-            avatarColor: u.avatarColor,
-            avatarText: u.avatarText,
-            avatarUrl: u.avatarUrl || null,
-            online: false // will be updated via socket
-        };
-    }).filter(Boolean);
-
-    res.json(friends);
-});
+// Get friends
+app.get('/api/friends', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query(
+        `SELECT u.id, u.username, u.nickname, u.bio, u.avatar_color, u.avatar_text, u.avatar_url
+         FROM users u
+         INNER JOIN friendships f ON (f.user_id = u.id OR f.friend_id = u.id)
+         WHERE (f.user_id = $1 OR f.friend_id = $1) AND f.status = 'accepted' AND u.id != $1`,
+        [req.user.id]
+    );
+    res.json(result.rows.map(u => ({
+        id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
+        avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url, online: false
+    })));
+}));
 
 // Add friend
-app.post('/api/friends/add', authMiddleware, (req, res) => {
+app.post('/api/friends/add', authMiddleware, asyncHandler(async (req, res) => {
     const { userId } = req.body;
     if (userId === req.user.id) return res.status(400).json({ error: '不能添加自己' });
 
-    const users = loadJSON('users.json');
-    if (!users.find(u => u.id === userId)) return res.status(404).json({ error: '用户不存在' });
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+    if (userCheck.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
 
-    const friendships = loadJSON('friendships.json');
-    const existing = friendships.find(f =>
-        ((f.userId === req.user.id && f.friendId === userId) || (f.userId === userId && f.friendId === req.user.id))
+    const existing = await pool.query(
+        'SELECT * FROM friendships WHERE ((user_id=$1 AND friend_id=$2) OR (user_id=$2 AND friend_id=$1))',
+        [req.user.id, userId]
     );
 
-    if (existing) {
-        if (existing.status === 'accepted') return res.status(400).json({ error: '已经是好友了' });
-        if (existing.status === 'pending') {
-            // Accept the request
-            existing.status = 'accepted';
-            saveJSON('friendships.json', friendships);
+    if (existing.rows.length > 0) {
+        const f = existing.rows[0];
+        if (f.status === 'accepted') return res.status(400).json({ error: '已经是好友了' });
+        if (f.status === 'pending') {
+            await pool.query('UPDATE friendships SET status = $1 WHERE id = $2', ['accepted', f.id]);
             return res.json({ success: true, message: '已接受好友请求' });
         }
     }
 
-    friendships.push({
-        id: 'f_' + Date.now(),
-        userId: req.user.id,
-        friendId: userId,
-        status: 'accepted',
-        createdAt: Date.now()
-    });
-    saveJSON('friendships.json', friendships);
-
+    await pool.query(
+        'INSERT INTO friendships (id, user_id, friend_id, status, created_at) VALUES ($1,$2,$3,$4,$5)',
+        ['f_' + Date.now(), req.user.id, userId, 'accepted', Date.now()]
+    );
     res.json({ success: true, message: '好友添加成功' });
-});
+}));
 
 // Remove friend
-app.post('/api/friends/remove', authMiddleware, (req, res) => {
+app.post('/api/friends/remove', authMiddleware, asyncHandler(async (req, res) => {
     const { userId } = req.body;
-    let friendships = loadJSON('friendships.json');
-    friendships = friendships.filter(f =>
-        !((f.userId === req.user.id && f.friendId === userId) || (f.userId === userId && f.friendId === req.user.id))
+    await pool.query(
+        'DELETE FROM friendships WHERE (user_id=$1 AND friend_id=$2) OR (user_id=$2 AND friend_id=$1)',
+        [req.user.id, userId]
     );
-    saveJSON('friendships.json', friendships);
     res.json({ success: true });
-});
+}));
 
 // ========== Chat APIs ==========
 
-// Get chat history (private)
-app.get('/api/messages/private/:userId', authMiddleware, (req, res) => {
+app.get('/api/messages/private/:userId', authMiddleware, asyncHandler(async (req, res) => {
     const otherUserId = req.params.userId;
-    const messages = loadJSON('messages.json');
-    const privateMsgs = messages.filter(m =>
-        m.type === 'private' &&
-        ((m.from === req.user.id && m.to === otherUserId) || (m.from === otherUserId && m.to === req.user.id))
-    ).sort((a, b) => a.timestamp - b.timestamp);
+
+    const result = await pool.query(
+        `SELECT * FROM messages WHERE type='private' AND
+         ((sender_id=$1 AND target_id=$2) OR (sender_id=$2 AND target_id=$1))
+         ORDER BY created_at ASC`,
+        [req.user.id, otherUserId]
+    );
 
     // Mark as read
-    const updated = messages.map(m => {
-        if (m.type === 'private' && m.to === req.user.id && m.from === otherUserId && !m.read) {
-            m.read = true;
-        }
-        return m;
-    });
-    saveJSON('messages.json', updated);
+    await pool.query(
+        `UPDATE messages SET is_read=true WHERE type='private' AND target_id=$1 AND sender_id=$2 AND is_read=false`,
+        [req.user.id, otherUserId]
+    );
 
-    res.json(privateMsgs.map(m => ({
-        id: m.id,
-        from: m.from,
-        to: m.to,
-        content: m.content,
-        messageType: m.messageType || 'text',
-        timestamp: m.timestamp,
-        read: m.read
+    res.json(result.rows.map(m => ({
+        id: m.id, from: m.sender_id, to: m.target_id,
+        content: m.content, messageType: m.message_type || 'text',
+        timestamp: m.created_at, read: m.is_read
     })));
-});
+}));
 
-// Get chat history (group)
-app.get('/api/messages/group/:groupId', authMiddleware, (req, res) => {
-    const groupId = req.params.groupId;
-    const messages = loadJSON('messages.json');
-    const groupMsgs = messages.filter(m => m.type === 'group' && m.to === groupId)
-        .sort((a, b) => a.timestamp - b.timestamp);
-
-    res.json(groupMsgs.map(m => ({
-        id: m.id,
-        from: m.from,
-        to: m.to,
-        content: m.content,
-        messageType: m.messageType || 'text',
-        timestamp: m.timestamp
+app.get('/api/messages/group/:groupId', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query(
+        "SELECT * FROM messages WHERE type='group' AND target_id=$1 ORDER BY created_at ASC",
+        [req.params.groupId]
+    );
+    res.json(result.rows.map(m => ({
+        id: m.id, from: m.sender_id, to: m.target_id,
+        content: m.content, messageType: m.message_type || 'text',
+        timestamp: m.created_at
     })));
-});
+}));
 
-// Get unread counts
-app.get('/api/messages/unread', authMiddleware, (req, res) => {
-    const messages = loadJSON('messages.json');
-    const friendships = loadJSON('friendships.json');
-    const groups = loadJSON('groups.json');
-
-    const friendIds = friendships
-        .filter(f => (f.userId === req.user.id || f.friendId === req.user.id) && f.status === 'accepted')
-        .map(f => f.userId === req.user.id ? f.friendId : f.userId);
+app.get('/api/messages/unread', authMiddleware, asyncHandler(async (req, res) => {
+    // Get friend IDs
+    const friendsResult = await pool.query(
+        'SELECT user_id, friend_id FROM friendships WHERE (user_id=$1 OR friend_id=$1) AND status=$2',
+        [req.user.id, 'accepted']
+    );
+    const friendIds = friendsResult.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
 
     // Private unread
     const privateUnread = {};
-    friendIds.forEach(fid => {
-        privateUnread[fid] = messages.filter(m =>
-            m.type === 'private' && m.from === fid && m.to === req.user.id && !m.read
-        ).length;
-    });
+    for (const fid of friendIds) {
+        const count = await pool.query(
+            "SELECT COUNT(*) FROM messages WHERE type='private' AND sender_id=$1 AND target_id=$2 AND is_read=false",
+            [fid, req.user.id]
+        );
+        privateUnread[fid] = parseInt(count.rows[0].count);
+    }
 
-    // Group unread (count new messages since last visit - simplified: count all unread)
-    const memberGroups = groups.filter(g => g.members.includes(req.user.id));
+    // Group unread
+    const groupsResult = await pool.query('SELECT id FROM groups_t WHERE members @> $1::jsonb', [JSON.stringify([req.user.id])]);
     const groupUnread = {};
-    memberGroups.forEach(g => {
-        groupUnread[g.id] = messages.filter(m =>
-            m.type === 'group' && m.to === g.id && m.from !== req.user.id && !m.readBy?.includes(req.user.id)
-        ).length;
-    });
+    for (const g of groupsResult.rows) {
+        const count = await pool.query(
+            "SELECT COUNT(*) FROM messages WHERE type='group' AND target_id=$1 AND sender_id!=$2 AND (read_by IS NULL OR NOT read_by @> $3::jsonb)",
+            [g.id, req.user.id, JSON.stringify([req.user.id])]
+        );
+        groupUnread[g.id] = parseInt(count.rows[0].count);
+    }
 
     res.json({ private: privateUnread, group: groupUnread });
-});
+}));
 
 // ========== Group APIs ==========
 
-// Get groups I'm in
-app.get('/api/groups', authMiddleware, (req, res) => {
-    const groups = loadJSON('groups.json');
-    const myGroups = groups.filter(g => g.members.includes(req.user.id));
-
-    res.json(myGroups.map(g => ({
-        id: g.id,
-        name: g.name,
-        description: g.description,
-        avatarColor: g.avatarColor,
-        avatarText: g.avatarText,
-        memberCount: g.members.length,
-        createdAt: g.createdAt
+app.get('/api/groups', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query(
+        'SELECT * FROM groups_t WHERE members @> $1::jsonb',
+        [JSON.stringify([req.user.id])]
+    );
+    res.json(result.rows.map(g => ({
+        id: g.id, name: g.name, description: g.description,
+        avatarColor: g.avatar_color, avatarText: g.avatar_text,
+        memberCount: (g.members || []).length, createdAt: g.created_at
     })));
-});
+}));
 
-// Create group
-app.post('/api/groups/create', authMiddleware, (req, res) => {
+app.post('/api/groups/create', authMiddleware, asyncHandler(async (req, res) => {
     const { name, description } = req.body;
     if (!name) return res.status(400).json({ error: '群名必填' });
 
-    const groups = loadJSON('groups.json');
     const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
+    const id = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const newGroup = {
-        id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        name,
-        description: description || '',
-        avatarColor: colors[Math.floor(Math.random() * colors.length)],
-        avatarText: name.slice(0, 1),
+        id, name, description: description || '',
+        avatar_color: colors[Math.floor(Math.random() * colors.length)],
+        avatar_text: name.slice(0, 1),
         members: [req.user.id],
-        createdAt: Date.now()
+        created_at: Date.now()
     };
-    groups.push(newGroup);
-    saveJSON('groups.json', groups);
 
-    io.emit('group-created', newGroup);
-    res.json({ success: true, group: newGroup });
-});
+    await pool.query(
+        'INSERT INTO groups_t (id, name, description, avatar_color, avatar_text, members, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [id, name, description || '', newGroup.avatar_color, newGroup.avatar_text, JSON.stringify([req.user.id]), Date.now()]
+    );
 
-// Join group
-app.post('/api/groups/join', authMiddleware, (req, res) => {
+    io.emit('group-created', { id, name, description: description || '', avatarColor: newGroup.avatar_color, avatarText: newGroup.avatar_text, members: [req.user.id], createdAt: Date.now() });
+    res.json({ success: true, group: { id, name, description: description || '', avatarColor: newGroup.avatar_color, avatarText: newGroup.avatar_text, members: [req.user.id], createdAt: Date.now() } });
+}));
+
+app.post('/api/groups/join', authMiddleware, asyncHandler(async (req, res) => {
     const { groupId } = req.body;
-    const groups = loadJSON('groups.json');
-    const group = groups.find(g => g.id === groupId);
-    if (!group) return res.status(404).json({ error: '群不存在' });
-    if (group.members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
+    const result = await pool.query('SELECT * FROM groups_t WHERE id = $1', [groupId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '群不存在' });
+    const group = result.rows[0];
+    const members = group.members || [];
+    if (members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
 
-    group.members.push(req.user.id);
-    saveJSON('groups.json', groups);
+    members.push(req.user.id);
+    await pool.query('UPDATE groups_t SET members = $1 WHERE id = $2', [JSON.stringify(members), groupId]);
 
-    // Notify group members
     io.to(groupId).emit('group-member-joined', { groupId, userId: req.user.id, nickname: req.user.nickname });
     io.emit('groups-updated');
-
     res.json({ success: true });
-});
+}));
 
-// Get group members
-app.get('/api/groups/:groupId/members', authMiddleware, (req, res) => {
-    const groups = loadJSON('groups.json');
-    const users = loadJSON('users.json');
-    const group = groups.find(g => g.id === req.params.groupId);
-    if (!group) return res.status(404).json({ error: '群不存在' });
+app.get('/api/groups/:groupId/members', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM groups_t WHERE id = $1', [req.params.groupId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '群不存在' });
+    const group = result.rows[0];
+    const members = group.members || [];
 
-    const members = group.members.map(mid => {
-        const u = users.find(u => u.id === mid);
-        return u ? { id: u.id, nickname: u.nickname, avatarColor: u.avatarColor, avatarText: u.avatarText, avatarUrl: u.avatarUrl || null } : null;
-    }).filter(Boolean);
+    if (members.length === 0) return res.json([]);
 
-    res.json(members);
-});
+    const usersResult = await pool.query(
+        `SELECT id, nickname, avatar_color, avatar_text, avatar_url FROM users WHERE id = ANY($1)`,
+        [members]
+    );
+    res.json(usersResult.rows.map(u => ({
+        id: u.id, nickname: u.nickname, avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url
+    })));
+}));
 
 // Upload chat image
 app.post('/api/upload', authMiddleware, upload.single('image'), (req, res) => {
@@ -483,146 +412,126 @@ app.post('/api/upload', authMiddleware, upload.single('image'), (req, res) => {
 
 // ========== Moments APIs ==========
 
-// Get moments
-app.get('/api/moments', authMiddleware, (req, res) => {
-    const moments = loadJSON('moments.json');
-    const users = loadJSON('users.json');
-    const friendships = loadJSON('friendships.json');
+app.get('/api/moments', authMiddleware, asyncHandler(async (req, res) => {
+    const friendsResult = await pool.query(
+        'SELECT user_id, friend_id FROM friendships WHERE (user_id=$1 OR friend_id=$1) AND status=$2',
+        [req.user.id, 'accepted']
+    );
+    const friendIds = friendsResult.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
 
-    const friendIds = friendships
-        .filter(f => (f.userId === req.user.id || f.friendId === req.user.id) && f.status === 'accepted')
-        .map(f => f.userId === req.user.id ? f.friendId : f.userId);
+    // Build visible moments query
+    const conditions = ['m.user_id = $1'];
+    const params = [req.user.id];
+    let idx = 2;
+    if (friendIds.length > 0) {
+        conditions.push(`m.user_id = ANY($${idx})`);
+        params.push(friendIds);
+        idx++;
+    }
+    conditions.push('m.is_public = true');
 
-    // Show own + friends' moments + public moments
-    const visibleMoments = moments.filter(m =>
-        m.userId === req.user.id || friendIds.includes(m.userId) || m.isPublic
-    ).sort((a, b) => b.createdAt - a.createdAt);
+    const momentsResult = await pool.query(
+        `SELECT m.*, u.nickname, u.avatar_color, u.avatar_text, u.avatar_url
+         FROM moments m LEFT JOIN users u ON m.user_id = u.id
+         WHERE ${conditions.join(' OR ')} ORDER BY m.created_at DESC`,
+        params
+    );
 
-    res.json(visibleMoments.map(m => {
-        const u = users.find(u => u.id === m.userId);
-        return {
-            id: m.id,
-            userId: m.userId,
-            nickname: u ? u.nickname : '未知用户',
-            avatarColor: u ? u.avatarColor : '#999',
-            avatarText: u ? u.avatarText : '?',
-            avatarUrl: u ? (u.avatarUrl || null) : null,
-            content: m.content,
-            images: m.images || [],
-            likes: m.likes || [],
-            comments: m.comments || [],
-            createdAt: m.createdAt,
-            isOwn: m.userId === req.user.id
-        };
-    }));
-});
+    res.json(momentsResult.rows.map(m => ({
+        id: m.id, userId: m.user_id, nickname: m.nickname || '未知用户',
+        avatarColor: m.avatar_color || '#999', avatarText: m.avatar_text || '?',
+        avatarUrl: m.avatar_url || null, content: m.content,
+        images: m.images || [], likes: m.likes || [], comments: m.comments || [],
+        createdAt: m.created_at, isOwn: m.user_id === req.user.id
+    })));
+}));
 
-// Post moment
-app.post('/api/moments/post', authMiddleware, upload.array('images', 9), (req, res) => {
+app.post('/api/moments/post', authMiddleware, upload.array('images', 9), asyncHandler(async (req, res) => {
     const { content } = req.body;
     if (!content && (!req.files || req.files.length === 0)) {
         return res.status(400).json({ error: '说点什么吧' });
     }
-
-    const moments = loadJSON('moments.json');
     const imageUrls = req.files ? req.files.map(f => `/uploads/${f.filename}`) : [];
+    const id = 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
-    const newMoment = {
-        id: 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        userId: req.user.id,
-        content: content || '',
-        images: imageUrls,
-        likes: [],
-        comments: [],
-        isPublic: true,
-        createdAt: Date.now()
-    };
-    moments.push(newMoment);
-    saveJSON('moments.json', moments);
+    await pool.query(
+        'INSERT INTO moments (id, user_id, content, images, likes, comments, is_public, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [id, req.user.id, content || '', JSON.stringify(imageUrls), JSON.stringify([]), JSON.stringify([]), true, Date.now()]
+    );
 
+    const newMoment = { id, userId: req.user.id, content: content || '', images: imageUrls, likes: [], comments: [], isPublic: true, createdAt: Date.now() };
     io.emit('new-moment', newMoment);
     res.json({ success: true, moment: newMoment });
-});
+}));
 
-// Like moment
-app.post('/api/moments/like/:momentId', authMiddleware, (req, res) => {
-    const moments = loadJSON('moments.json');
-    const moment = moments.find(m => m.id === req.params.momentId);
-    if (!moment) return res.status(404).json({ error: '动态不存在' });
+app.post('/api/moments/like/:momentId', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM moments WHERE id = $1', [req.params.momentId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '动态不存在' });
+    const moment = result.rows[0];
+    let likes = moment.likes || [];
 
-    if (moment.likes.includes(req.user.id)) {
-        moment.likes = moment.likes.filter(id => id !== req.user.id);
+    if (likes.includes(req.user.id)) {
+        likes = likes.filter(id => id !== req.user.id);
     } else {
-        moment.likes.push(req.user.id);
+        likes.push(req.user.id);
     }
-    saveJSON('moments.json', moments);
+    await pool.query('UPDATE moments SET likes = $1 WHERE id = $2', [JSON.stringify(likes), req.params.momentId]);
 
-    io.emit('moment-updated', moment);
-    res.json({ success: true, likes: moment.likes });
-});
+    const updated = { ...moment, likes, user_id: moment.user_id, avatar_color: moment.avatar_color, avatar_text: moment.avatar_text, created_at: moment.created_at };
+    io.emit('moment-updated', updated);
+    res.json({ success: true, likes });
+}));
 
-// Comment moment
-app.post('/api/moments/comment/:momentId', authMiddleware, (req, res) => {
+app.post('/api/moments/comment/:momentId', authMiddleware, asyncHandler(async (req, res) => {
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: '评论内容不能为空' });
 
-    const moments = loadJSON('moments.json');
-    const moment = moments.find(m => m.id === req.params.momentId);
-    if (!moment) return res.status(404).json({ error: '动态不存在' });
+    const result = await pool.query('SELECT * FROM moments WHERE id = $1', [req.params.momentId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '动态不存在' });
+    const moment = result.rows[0];
+    const comments = moment.comments || [];
 
-    const comment = {
-        id: 'c_' + Date.now(),
-        userId: req.user.id,
-        nickname: req.user.nickname,
-        content,
-        createdAt: Date.now()
-    };
-    moment.comments.push(comment);
-    saveJSON('moments.json', moments);
+    const comment = { id: 'c_' + Date.now(), userId: req.user.id, nickname: req.user.nickname, content, createdAt: Date.now() };
+    comments.push(comment);
+    await pool.query('UPDATE moments SET comments = $1 WHERE id = $2', [JSON.stringify(comments), req.params.momentId]);
 
-    io.emit('moment-updated', moment);
+    const updated = { ...moment, comments, user_id: moment.user_id, avatar_color: moment.avatar_color, avatar_text: moment.avatar_text, created_at: moment.created_at };
+    io.emit('moment-updated', updated);
     res.json({ success: true, comment });
-});
+}));
 
-// Delete moment (own or admin)
-app.delete('/api/moments/:momentId', authMiddleware, (req, res) => {
-    let moments = loadJSON('moments.json');
-    const moment = moments.find(m => m.id === req.params.momentId);
-
-    if (!moment) return res.status(404).json({ error: '动态不存在' });
-    if (moment.userId !== req.user.id && req.user.role !== 'admin') {
+app.delete('/api/moments/:momentId', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM moments WHERE id = $1', [req.params.momentId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '动态不存在' });
+    if (result.rows[0].user_id !== req.user.id && req.user.role !== 'admin') {
         return res.status(403).json({ error: '无权删除' });
     }
-
-    moments = moments.filter(m => m.id !== req.params.momentId);
-    saveJSON('moments.json', moments);
-
+    await pool.query('DELETE FROM moments WHERE id = $1', [req.params.momentId]);
     io.emit('moment-deleted', req.params.momentId);
     res.json({ success: true });
-});
+}));
 
 // ========== Admin APIs ==========
 
-app.get('/api/admin/users', adminMiddleware, (req, res) => {
-    const users = loadJSON('users.json');
-    res.json(users.filter(u => u.role !== 'system').map(u => ({
+app.get('/api/admin/users', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query("SELECT * FROM users WHERE role != 'system'");
+    res.json(result.rows.map(u => ({
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-        avatarColor: u.avatarColor, avatarText: u.avatarText,
-        role: u.role, banned: u.banned, createdAt: u.createdAt
+        avatarColor: u.avatar_color, avatarText: u.avatar_text,
+        role: u.role, banned: u.banned, createdAt: u.created_at
     })));
-});
+}));
 
-app.post('/api/admin/ban/:userId', adminMiddleware, (req, res) => {
-    const users = loadJSON('users.json');
-    const user = users.find(u => u.id === req.params.userId);
-    if (!user) return res.status(404).json({ error: '用户不存在' });
+app.post('/api/admin/ban/:userId', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    const user = result.rows[0];
     if (user.role === 'admin') return res.status(400).json({ error: '不能封禁管理员' });
 
-    user.banned = !user.banned;
-    saveJSON('users.json', users);
+    const newBan = !user.banned;
+    await pool.query('UPDATE users SET banned = $1 WHERE id = $2', [newBan, req.params.userId]);
 
-    if (user.banned) {
-        // Force disconnect banned user
+    if (newBan) {
         const sockets = io.sockets.sockets;
         for (const [sid, socket] of sockets) {
             if (socket.userId === user.id) {
@@ -631,215 +540,182 @@ app.post('/api/admin/ban/:userId', adminMiddleware, (req, res) => {
             }
         }
     }
+    res.json({ success: true, banned: newBan });
+}));
 
-    res.json({ success: true, banned: user.banned });
-});
-
-app.delete('/api/admin/user/:userId', adminMiddleware, (req, res) => {
+app.delete('/api/admin/user/:userId', adminMiddleware, asyncHandler(async (req, res) => {
     const userId = req.params.userId;
-    let users = loadJSON('users.json');
-    const user = users.find(u => u.id === userId);
-    if (!user) return res.status(404).json({ error: '用户不存在' });
-    if (user.role === 'admin') return res.status(400).json({ error: '不能删除管理员' });
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    if (result.rows[0].role === 'admin') return res.status(400).json({ error: '不能删除管理员' });
 
     // Remove from all groups
-    let groups = loadJSON('groups.json');
-    groups.forEach(g => { g.members = g.members.filter(m => m !== userId); });
-    saveJSON('groups.json', groups);
+    await pool.query("UPDATE groups_t SET members = members - $1", [userId]);
 
-    // Remove friendships
-    let friendships = loadJSON('friendships.json');
-    friendships = friendships.filter(f => f.userId !== userId && f.friendId !== userId);
-    saveJSON('friendships.json', friendships);
-
-    // Remove moments
-    let moments = loadJSON('moments.json');
-    moments = moments.filter(m => m.userId !== userId);
-    saveJSON('moments.json', moments);
-
-    // Remove messages
-    let messages = loadJSON('messages.json');
-    messages = messages.filter(m => m.from !== userId && m.to !== userId);
-    saveJSON('messages.json', messages);
-
-    // Remove user
-    users = users.filter(u => u.id !== userId);
-    saveJSON('users.json', users);
+    // Remove friendships, moments, messages, user
+    await pool.query('DELETE FROM friendships WHERE user_id = $1 OR friend_id = $1', [userId]);
+    await pool.query('DELETE FROM moments WHERE user_id = $1', [userId]);
+    await pool.query('DELETE FROM messages WHERE sender_id = $1 OR target_id = $1', [userId]);
+    await pool.query('DELETE FROM users WHERE id = $1', [userId]);
 
     // Disconnect
     const sockets = io.sockets.sockets;
     for (const [sid, socket] of sockets) {
         if (socket.userId === userId) socket.disconnect(true);
     }
-
     io.emit('user-deleted', userId);
     res.json({ success: true });
-});
+}));
 
-app.get('/api/admin/messages/:userId', adminMiddleware, (req, res) => {
+app.get('/api/admin/messages/:userId', adminMiddleware, asyncHandler(async (req, res) => {
     const userId = req.params.userId;
-    const messages = loadJSON('messages.json');
-    const users = loadJSON('users.json');
+    const result = await pool.query(
+        `SELECT m.*, fu.nickname as from_nickname, tu.nickname as to_nickname
+         FROM messages m
+         LEFT JOIN users fu ON m.sender_id = fu.id
+         LEFT JOIN users tu ON m.target_id = tu.id
+         WHERE m.sender_id = $1 OR m.target_id = $1
+         ORDER BY m.created_at DESC LIMIT 200`,
+        [userId]
+    );
 
-    const userMsgs = messages.filter(m => m.from === userId || m.to === userId)
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 200);
+    const groupsResult = await pool.query('SELECT id, name FROM groups_t');
 
-    res.json(userMsgs.map(m => {
-        const fromUser = users.find(u => u.id === m.from);
-        const toUser = users.find(u => u.id === m.to);
+    res.json(result.rows.map(m => {
+        let toNickname = m.to_nickname || '未知';
+        if (m.type === 'group') {
+            const g = groupsResult.rows.find(g => g.id === m.target_id);
+            toNickname = g ? g.name : '群聊';
+        }
         return {
-            id: m.id,
-            from: m.from,
-            fromNickname: fromUser ? fromUser.nickname : '未知',
-            to: m.to,
-            toNickname: m.type === 'group' ? (loadJSON('groups.json').find(g => g.id === m.to)?.name || '群聊') : (toUser ? toUser.nickname : '未知'),
-            type: m.type,
-            content: m.content,
-            messageType: m.messageType || 'text',
-            timestamp: m.timestamp
+            id: m.id, from: m.sender_id, fromNickname: m.from_nickname || '未知',
+            to: m.target_id, toNickname, type: m.type,
+            content: m.content, messageType: m.message_type || 'text', timestamp: m.created_at
         };
     }));
-});
+}));
 
-app.delete('/api/admin/moment/:momentId', adminMiddleware, (req, res) => {
-    let moments = loadJSON('moments.json');
-    moments = moments.filter(m => m.id !== req.params.momentId);
-    saveJSON('moments.json', moments);
+app.delete('/api/admin/moment/:momentId', adminMiddleware, asyncHandler(async (req, res) => {
+    await pool.query('DELETE FROM moments WHERE id = $1', [req.params.momentId]);
     io.emit('moment-deleted', req.params.momentId);
     res.json({ success: true });
-});
+}));
 
-app.get('/api/admin/stats', adminMiddleware, (req, res) => {
-    const users = loadJSON('users.json');
-    const messages = loadJSON('messages.json');
-    const groups = loadJSON('groups.json');
-    const moments = loadJSON('moments.json');
-    const friendships = loadJSON('friendships.json');
-
+app.get('/api/admin/stats', adminMiddleware, asyncHandler(async (req, res) => {
     const now = Date.now();
     const today = now - 86400000;
 
+    const [totalUsers, bannedUsers, totalMessages, todayMessages, totalGroups, totalMoments, todayMoments, totalFriendships] = await Promise.all([
+        pool.query("SELECT COUNT(*) FROM users WHERE role != 'system'"),
+        pool.query('SELECT COUNT(*) FROM users WHERE banned = true'),
+        pool.query('SELECT COUNT(*) FROM messages'),
+        pool.query('SELECT COUNT(*) FROM messages WHERE created_at > $1', [today]),
+        pool.query('SELECT COUNT(*) FROM groups_t'),
+        pool.query('SELECT COUNT(*) FROM moments'),
+        pool.query('SELECT COUNT(*) FROM moments WHERE created_at > $1', [today]),
+        pool.query("SELECT COUNT(*) FROM friendships WHERE status = 'accepted'")
+    ]);
+
+    const onlineCount = Object.values(io.sockets.sockets).filter(s => s.userId).length;
+
     res.json({
-        totalUsers: users.filter(u => u.role !== 'system').length,
-        bannedUsers: users.filter(u => u.banned).length,
-        totalMessages: messages.length,
-        todayMessages: messages.filter(m => m.timestamp > today).length,
-        totalGroups: groups.length,
-        totalMoments: moments.length,
-        todayMoments: moments.filter(m => m.createdAt > today).length,
-        totalFriendships: friendships.filter(f => f.status === 'accepted').length,
-        onlineUsers: Object.values(io.sockets.sockets).filter(s => s.userId).length
+        totalUsers: parseInt(totalUsers.rows[0].count), bannedUsers: parseInt(bannedUsers.rows[0].count),
+        totalMessages: parseInt(totalMessages.rows[0].count), todayMessages: parseInt(todayMessages.rows[0].count),
+        totalGroups: parseInt(totalGroups.rows[0].count), totalMoments: parseInt(totalMoments.rows[0].count),
+        todayMoments: parseInt(todayMoments.rows[0].count), totalFriendships: parseInt(totalFriendships.rows[0].count),
+        onlineUsers: onlineCount
     });
-});
+}));
 
-// ========== Socket.IO - Real-time Communication ==========
+// ========== Socket.IO ==========
 
-const onlineUsers = {}; // userId -> socketId
+const onlineUsers = {};
 
 io.on('connection', (socket) => {
     console.log('Socket connected:', socket.id);
 
-    // Authenticate socket
-    socket.on('auth', (token) => {
-        const users = loadJSON('users.json');
-        const user = users.find(u => u.id === token);
-        if (!user) {
-            socket.emit('auth-error', '无效token');
-            return;
+    socket.on('auth', async (token) => {
+        try {
+            const result = await pool.query('SELECT * FROM users WHERE id = $1', [token]);
+            if (result.rows.length === 0) {
+                socket.emit('auth-error', '无效token');
+                return;
+            }
+            const user = result.rows[0];
+            if (user.banned) {
+                socket.emit('banned', { message: '账号已被封禁' });
+                socket.disconnect(true);
+                return;
+            }
+
+            socket.userId = user.id;
+            socket.userNickname = user.nickname;
+            onlineUsers[user.id] = socket.id;
+
+            const groupsResult = await pool.query('SELECT id FROM groups_t WHERE members @> $1::jsonb', [JSON.stringify([user.id])]);
+            groupsResult.rows.forEach(g => socket.join(g.id));
+
+            socket.broadcast.emit('user-online', { userId: user.id, nickname: user.nickname });
+            io.emit('online-list', Object.keys(onlineUsers));
+            console.log(`User ${user.nickname} (${user.id}) authenticated`);
+        } catch (e) {
+            console.error('Socket auth error:', e.message);
+            socket.emit('auth-error', '认证失败');
         }
-        if (user.banned) {
-            socket.emit('banned', { message: '账号已被封禁' });
-            socket.disconnect(true);
-            return;
-        }
-
-        socket.userId = user.id;
-        socket.userNickname = user.nickname;
-        onlineUsers[user.id] = socket.id;
-
-        // Join user's groups
-        const groups = loadJSON('groups.json');
-        groups.forEach(g => {
-            if (g.members.includes(user.id)) socket.join(g.id);
-        });
-
-        // Notify others of online status
-        socket.broadcast.emit('user-online', { userId: user.id, nickname: user.nickname });
-        io.emit('online-list', Object.keys(onlineUsers));
-
-        console.log(`User ${user.nickname} (${user.id}) authenticated`);
     });
 
-    // Private message
-    socket.on('private-message', (data) => {
+    socket.on('private-message', async (data) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
+        const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
-        const messages = loadJSON('messages.json');
-        const msg = {
-            id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-            type: 'private',
-            from: socket.userId,
-            to,
-            content,
-            messageType: messageType || 'text',
-            timestamp: Date.now(),
-            read: false
-        };
-        messages.push(msg);
-        saveJSON('messages.json', messages);
+        try {
+            await pool.query(
+                'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+                [id, 'private', socket.userId, to, content, messageType || 'text', Date.now(), false]
+            );
 
-        const users = loadJSON('users.json');
-        const fromUser = users.find(u => u.id === socket.userId);
+            const fromUser = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
+            const u = fromUser.rows[0] || {};
 
-        // Send to recipient if online
-        const recipientSocketId = onlineUsers[to];
-        if (recipientSocketId) {
-            io.to(recipientSocketId).emit('private-message', {
-                ...msg,
-                fromNickname: fromUser?.nickname,
-                fromAvatarColor: fromUser?.avatarColor,
-                fromAvatarText: fromUser?.avatarText
+            const msg = { id, type: 'private', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), read: false };
+
+            const recipientSocketId = onlineUsers[to];
+            if (recipientSocketId) {
+                io.to(recipientSocketId).emit('private-message', {
+                    ...msg, fromNickname: u.nickname, fromAvatarColor: u.avatar_color, fromAvatarText: u.avatar_text
+                });
+            }
+            socket.emit('private-message-sent', msg);
+        } catch (e) {
+            console.error('Save message error:', e.message);
+        }
+    });
+
+    socket.on('group-message', async (data) => {
+        if (!socket.userId) return;
+        const { to, content, messageType } = data;
+        const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+
+        try {
+            await pool.query(
+                'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read, read_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+                [id, 'group', socket.userId, to, content, messageType || 'text', Date.now(), true, JSON.stringify([socket.userId])]
+            );
+
+            const fromUser = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
+            const u = fromUser.rows[0] || {};
+
+            const msg = { id, type: 'group', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), readBy: [socket.userId] };
+
+            io.to(to).emit('group-message', {
+                ...msg, fromNickname: u.nickname, fromAvatarColor: u.avatar_color, fromAvatarText: u.avatar_text
             });
+        } catch (e) {
+            console.error('Save group message error:', e.message);
         }
-
-        // Send back to sender for confirmation
-        socket.emit('private-message-sent', msg);
     });
 
-    // Group message
-    socket.on('group-message', (data) => {
-        if (!socket.userId) return;
-        const { to, content, messageType } = data;
-
-        const messages = loadJSON('messages.json');
-        const msg = {
-            id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-            type: 'group',
-            from: socket.userId,
-            to,
-            content,
-            messageType: messageType || 'text',
-            timestamp: Date.now(),
-            readBy: [socket.userId]
-        };
-        messages.push(msg);
-        saveJSON('messages.json', messages);
-
-        const users = loadJSON('users.json');
-        const fromUser = users.find(u => u.id === socket.userId);
-
-        // Broadcast to group
-        io.to(to).emit('group-message', {
-            ...msg,
-            fromNickname: fromUser?.nickname,
-            fromAvatarColor: fromUser?.avatarColor,
-            fromAvatarText: fromUser?.avatarText
-        });
-    });
-
-    // Typing indicator
     socket.on('typing', (data) => {
         const { to, type } = data;
         if (type === 'private') {
@@ -864,7 +740,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Disconnect
     socket.on('disconnect', () => {
         if (socket.userId) {
             delete onlineUsers[socket.userId];
@@ -877,46 +752,61 @@ io.on('connection', (socket) => {
 
 // ========== Start Server ==========
 
-// Create admin account if not exists
-const users = loadJSON('users.json');
-if (!users.find(u => u.role === 'admin')) {
-    const admin = {
-        id: 'u_admin',
-        username: 'admin',
-        password: bcrypt.hashSync('admin123', 10),
-        nickname: '管理员',
-        bio: '聊聊平台管理员',
-        avatarColor: '#f5576c',
-        avatarText: '管',
-        role: 'admin',
-        banned: false,
-        createdAt: Date.now()
-    };
-    users.push(admin);
-    // Add admin to public group
-    const groups = loadJSON('groups.json');
-    const pubGroup = groups.find(g => g.id === 'g_public');
-    if (pubGroup) pubGroup.members.push(admin.id);
-    saveJSON('groups.json', groups);
-    saveJSON('users.json', users);
-    console.log('Admin account created: admin / admin123');
-}
+async function start() {
+    await initTables();
 
-server.listen(PORT, '0.0.0.0', () => {
-    const os = require('os');
-    const nets = os.networkInterfaces();
-    let localIP = 'localhost';
-    for (const name of Object.keys(nets)) {
-        for (const net of nets[name]) {
-            if (net.family === 'IPv4' && !net.internal) {
-                localIP = net.address;
-                break;
+    // Create admin if not exists
+    const adminCheck = await pool.query("SELECT id FROM users WHERE role = 'admin'");
+    if (adminCheck.rows.length === 0) {
+        const adminId = 'u_admin';
+        await pool.query(
+            `INSERT INTO users (id, username, password, nickname, bio, avatar_color, avatar_text, role, created_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+            [adminId, 'admin', bcrypt.hashSync('admin123', 10), '管理员', '聊聊平台管理员', '#f5576c', '管', 'admin', Date.now()]
+        );
+        // Add admin to public group
+        const pubGroup = await pool.query("SELECT id, members FROM groups_t WHERE id = 'g_public'");
+        if (pubGroup.rows.length > 0) {
+            const members = pubGroup.rows[0].members || [];
+            if (!members.includes(adminId)) {
+                members.push(adminId);
+                await pool.query('UPDATE groups_t SET members = $1 WHERE id = $2', [JSON.stringify(members), 'g_public']);
             }
         }
+        console.log('Admin account created: admin / admin123');
     }
-    console.log(`聊聊 ChatSpace server running!`);
-    console.log(`  本机访问: http://localhost:${PORT}`);
-    console.log(`  局域网访问: http://${localIP}:${PORT}`);
-    console.log(`  管理员账号: admin / admin123`);
-    console.log(`  同一WiFi下的手机/其他电脑用局域网地址即可访问`);
+
+    // Ensure public group exists
+    const pubCheck = await pool.query("SELECT id FROM groups_t WHERE id = 'g_public'");
+    if (pubCheck.rows.length === 0) {
+        await pool.query(
+            'INSERT INTO groups_t (id, name, description, avatar_color, avatar_text, members, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+            ['g_public', '聊聊大厅', '所有人都在这里聊天！', '#667eea', '厅', JSON.stringify([]), Date.now()]
+        );
+        console.log('Public group created');
+    }
+
+    server.listen(PORT, '0.0.0.0', () => {
+        const os = require('os');
+        const nets = os.networkInterfaces();
+        let localIP = 'localhost';
+        for (const name of Object.keys(nets)) {
+            for (const net of nets[name]) {
+                if (net.family === 'IPv4' && !net.internal) {
+                    localIP = net.address;
+                    break;
+                }
+            }
+        }
+        console.log(`飞友之家 server running!`);
+        console.log(`  本机访问: http://localhost:${PORT}`);
+        console.log(`  局域网访问: http://${localIP}:${PORT}`);
+        console.log(`  管理员账号: admin / admin123`);
+        console.log(`  PostgreSQL: Supabase (数据永久保存)`);
+    });
+}
+
+start().catch(e => {
+    console.error('Startup failed:', e.message);
+    process.exit(1);
 });
