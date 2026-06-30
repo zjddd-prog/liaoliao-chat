@@ -1062,13 +1062,39 @@ input, textarea { font-family: inherit; }
         background: var(--sidebar-bg);
     }
     .sidebar-top { display: none; }
+    .sidebar-points { display: none; }
+    /* Mobile checkin button in bottom bar */
+    .checkin-mobile-btn { display: flex; }
     .sidebar-bottom {
         display: flex;
         flex-direction: row;
         align-items: center;
         justify-content: center;
         margin-top: 0;
+        width: 100%;
     }
+    /* Make sidebar-btn (气泡/打赏/签到) match feedback-btn mobile style */
+    .sidebar-btn {
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        gap: 2px;
+        padding: 0;
+        flex: 1;
+        height: 56px;
+        border-radius: 0;
+        font-size: 10px;
+        color: var(--text-light);
+        background: none;
+        border: none;
+        cursor: pointer;
+        display: flex;
+    }
+    .sidebar-btn svg { width: 20px; height: 20px; }
+    .sidebar-btn-label { display: block; font-size: 10px; }
+    .sidebar-btn:hover { background: var(--bg); color: var(--text); }
+    /* Checkin button states */
+    .checkin-mobile-btn.checked { color: #f5576c; }
     .sidebar-bottom .feedback-btn {
         justify-content: center;
         align-items: center;
@@ -1143,6 +1169,8 @@ input, textarea { font-family: inherit; }
         height: 100%;
         display: flex;
         flex-direction: column;
+        /* 手机端确保底部输入区域不被nav遮挡 */
+        padding-bottom: 56px;
     }
     .detail-panel.hidden {
         display: none;
@@ -1170,15 +1198,18 @@ input, textarea { font-family: inherit; }
         flex: 1;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+        min-height: 0;
     }
 
-    /* 输入框区域 - 确保始终可见 */
+    /* 输入框区域 - 确保始终可见可点击 */
     .chat-input-area {
         padding: 8px 12px;
-        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        padding-bottom: max(8px, env(safe-area-inset-bottom, 8px));
         flex-shrink: 0;
         background: var(--card-bg);
         border-top: 1px solid var(--border);
+        position: relative;
+        z-index: 30;
     }
     .chat-input {
         font-size: 16px; /* 防止 iOS 自动缩放 */
@@ -1229,15 +1260,30 @@ input, textarea { font-family: inherit; }
     .toast { min-width: auto; }
 }
 
-/* 超小屏幕（iPhone 5/SE 等） */
-@media (max-width: 374px) {
+/* 小屏幕手机（360px - 380px） */
+@media (max-width: 380px) {
     .sidebar { height: 48px; }
     .nav-item svg { width: 18px; height: 18px; }
+    .sidebar-btn { height: 48px; }
+    .sidebar-btn svg { width: 18px; height: 18px; }
+    .sidebar-btn-label { font-size: 9px; }
+    .checkin-mobile-btn { height: 48px; }
+    .sidebar-bottom .feedback-btn { height: 48px; font-size: 9px; }
+    .sidebar-bottom .feedback-btn svg { width: 20px; height: 20px; }
     .content-area { height: calc(100dvh - 48px); }
+    .detail-panel { padding-bottom: 48px; }
     .auth-container { padding: 20px 16px; }
-    .msg-row { max-width: 90%; }
-    .chat-input-area { padding: 6px 10px; }
-    .chat-input { min-height: 32px; font-size: 15px; }
+    .msg-row { max-width: 92%; }
+    .chat-input-area { padding: 6px 8px; padding-bottom: max(6px, env(safe-area-inset-bottom, 6px)); }
+    .chat-input { min-height: 32px; font-size: 15px; padding: 8px 10px; }
+    .chat-tool-btn { width: 30px; height: 30px; }
+    .chat-send-btn { width: 32px; height: 32px; }
+    .chat-header { padding: 8px 10px; }
+    .chat-header-name { font-size: 14px; }
+    .msg-bubble { padding: 8px 12px; font-size: 14px; }
+    /* 登录框更紧凑 */
+    .auth-tab { padding: 8px 16px; font-size: 14px; }
+    .auth-form input { padding: 10px 14px; font-size: 15px; }
 }
 
 /* ========== 反馈/设置 按钮 ========== */
@@ -1337,6 +1383,9 @@ input, textarea { font-family: inherit; }
 }
 .sidebar-btn:hover { background: var(--bg); color: var(--primary); }
 .sidebar-btn-label { font-size: 12px; }
+
+/* 手机端签到按钮 - 桌面端隐藏 */
+.checkin-mobile-btn { display: none; }
 
 /* ========== 聊天气泡风格 ========== */
 
