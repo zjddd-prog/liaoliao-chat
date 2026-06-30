@@ -256,6 +256,18 @@ const App = {
             this.toast(msg, 'error');
         });
 
+        this.socket.on('promoted', (data) => {
+            this.toast(data.message, 'success');
+            this.user.role = 'admin';
+            // Show admin nav button
+            const adminNav = document.getElementById('nav-admin');
+            if (adminNav) adminNav.classList.remove('hidden');
+        });
+
+        this.socket.on('new-feedback', (data) => {
+            this.showFeedbackDot();
+        });
+
         this.socket.on('disconnect', () => {
             console.log('Socket disconnected');
         });
@@ -1160,6 +1172,7 @@ const App = {
                         </div>
                         <div class="admin-actions">
                             ${u.role !== 'admin' ? `
+                                <button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="提升为管理员">⭐ 设为管理员</button>
                                 <button class="btn-secondary btn-sm" onclick="App.adminBanUser('${u.id}')">${u.banned ? '解封' : '封禁'}</button>
                                 <button class="btn-danger btn-sm" onclick="App.adminDeleteUser('${u.id}')">注销</button>
                                 <button class="btn-secondary btn-sm" onclick="App.adminViewChat('${u.id}')">查看聊天</button>
@@ -1221,6 +1234,32 @@ const App = {
                 contentEl.innerHTML = `<p style="color:red;">${e.message}</p>`;
             }
         }
+
+        else if (tab === 'admin-feedbacks') {
+            try {
+                const feedbacks = await this.api('/api/admin/feedbacks');
+                if (feedbacks.length === 0) {
+                    contentEl.innerHTML = '<p style="color:var(--text-light);text-align:center;padding:40px;">暂无反馈</p>';
+                    return;
+                }
+                contentEl.innerHTML = '<div class="feedbacks-list">' + feedbacks.map(fb => `
+                    <div class="feedback-card">
+                        <div class="feedback-header">
+                            <div class="feedback-avatar" style="background:${fb.avatarColor}">${fb.avatarText}</div>
+                            <span class="feedback-user">${fb.nickname}</span>
+                            <span class="feedback-time">${this.formatTime(fb.createdAt)}</span>
+                        </div>
+                        <div class="feedback-text">${this.escapeHtml(fb.content)}</div>
+                        <span class="feedback-status ${fb.status}">${fb.status === 'pending' ? '待处理' : '已处理'}</span>
+                        <button class="btn-secondary btn-sm" style="margin-left:8px;" onclick="App.adminResolveFeedback('${fb.id}')">
+                            ${fb.status === 'pending' ? '标记已处理' : '重新打开'}
+                        </button>
+                    </div>
+                `).join('') + '</div>';
+            } catch (e) {
+                contentEl.innerHTML = `<p style="color:red;">${e.message}</p>`;
+            }
+        }
     },
 
     async adminBanUser(userId) {
@@ -1277,6 +1316,68 @@ const App = {
             this.renderAdminTab('admin-moments');
         } catch (e) {
             this.toast(e.message, 'error');
+        }
+    },
+
+    async adminPromoteUser(userId) {
+        if (!confirm('确定要将该用户提升为管理员吗？')) return;
+        try {
+            const data = await this.api(`/api/admin/promote/${userId}`, 'POST');
+            this.toast(data.message, 'success');
+            this.renderAdminTab('admin-users');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async adminResolveFeedback(feedbackId) {
+        try {
+            const data = await this.api(`/api/admin/feedback/${feedbackId}/resolve`, 'POST');
+            this.toast(data.status === 'resolved' ? '已标记为处理完成' : '已重新打开', 'success');
+            this.renderAdminTab('admin-feedbacks');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    // ========== 问题反馈 ==========
+
+    showFeedbackModal() {
+        const body = `
+            <div>
+                <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
+                    遇到问题或有建议？请告诉我们，管理员会尽快处理。
+                </p>
+                <textarea id="feedback-content" placeholder="请详细描述你的问题或建议..." 
+                    style="width:100%;min-height:120px;padding:12px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:14px;resize:vertical;font-family:inherit;"
+                ></textarea>
+            </div>
+        `;
+        const footer = `
+            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
+            <button class="btn-primary" id="submit-feedback-btn">提交反馈</button>
+        `;
+        this.showModal('问题反馈', body, footer);
+
+        document.getElementById('submit-feedback-btn').addEventListener('click', async () => {
+            const content = document.getElementById('feedback-content').value.trim();
+            if (content.length < 2) {
+                this.toast('反馈内容至少2个字符', 'error');
+                return;
+            }
+            try {
+                await this.api('/api/feedback', 'POST', { content });
+                this.closeModal();
+                this.toast('反馈已提交，感谢你的意见！', 'success');
+            } catch (e) {
+                this.toast(e.message, 'error');
+            }
+        });
+    },
+
+    showFeedbackDot() {
+        if (this.user && this.user.role === 'admin') {
+            this.toast('收到新的用户反馈', 'info');
         }
     },
 
