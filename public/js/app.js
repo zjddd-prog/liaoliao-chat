@@ -74,6 +74,14 @@ const App = {
         document.getElementById('image-preview-overlay')?.addEventListener('click', () => {
             document.getElementById('image-preview-overlay').classList.add('hidden');
         });
+
+        // Esc + 模态遮罩关闭
+        this._initModals();
+
+        // 标签页可见性变化时更新标题
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) this._updateTitleBadge(0);
+        });
     },
 
     // ========== 网络请求 ==========
@@ -195,6 +203,25 @@ const App = {
         this.socket.on('connect', () => {
             console.log('Socket connected');
             this.socket.emit('auth', this.token);
+            this.hideConnectionBanner();
+        });
+
+        this.socket.on('disconnect', () => {
+            console.log('Socket disconnected');
+            this.showConnectionBanner('disconnected', t('chat.disconnected'));
+        });
+
+        this.socket.on('reconnect_attempt', () => {
+            this.showConnectionBanner('reconnecting', t('chat.reconnecting'));
+        });
+
+        this.socket.on('reconnect', () => {
+            this.socket.emit('auth', this.token);
+            this.hideConnectionBanner();
+        });
+
+        this.socket.on('connect_error', () => {
+            this.showConnectionBanner('disconnected', t('chat.connectionFailed'));
         });
 
         this.socket.on('private-message', (msg) => {
@@ -279,6 +306,89 @@ const App = {
 
         this.socket.on('disconnect', () => {
             console.log('Socket disconnected');
+        });
+    },
+
+    // ========== 连接状态横幅 ==========
+
+    showConnectionBanner(status, msg) {
+        let banner = document.getElementById('connection-banner');
+        if (!banner) {
+            banner = document.createElement('div');
+            banner.id = 'connection-banner';
+            banner.className = 'connection-banner';
+            const mainApp = document.getElementById('main-app');
+            mainApp.insertBefore(banner, mainApp.firstChild);
+        }
+        banner.className = `connection-banner ${status}`;
+        banner.textContent = msg;
+        banner.style.display = 'block';
+    },
+
+    hideConnectionBanner() {
+        const banner = document.getElementById('connection-banner');
+        if (banner) banner.style.display = 'none';
+    },
+
+    // ========== 时间格式化 ==========
+
+    formatTime(ts) {
+        if (!ts) return '';
+        const now = Date.now();
+        const diff = now - ts;
+        if (diff < 60000) return t('time.justNow');
+        if (diff < 3600000) return Math.floor(diff / 60000) + t('time.minAgo');
+        if (diff < 86400000) return Math.floor(diff / 3600000) + t('time.hourAgo');
+        const d = new Date(ts);
+        const month = d.getMonth() + 1;
+        const date = d.getDate();
+        return `${month}/${date} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    },
+
+    // ========== 智能滚动 ==========
+
+    scrollToBottom(force = false) {
+        const area = document.getElementById('messages-area');
+        if (!area) return;
+        const threshold = 100;
+        const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
+        if (force || isNearBottom) {
+            area.scrollTop = area.scrollHeight;
+        }
+        this.updateScrollButton();
+    },
+
+    updateScrollButton() {
+        const area = document.getElementById('messages-area');
+        if (!area) return;
+        const threshold = 150;
+        const btn = document.getElementById('scroll-bottom-btn');
+        const isNearBottom = area.scrollHeight - area.scrollTop - area.clientHeight < threshold;
+        if (!isNearBottom) {
+            if (!btn) {
+                const newBtn = document.createElement('div');
+                newBtn.id = 'scroll-bottom-btn';
+                newBtn.className = 'scroll-bottom-btn';
+                newBtn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+                newBtn.onclick = () => this.scrollToBottom(true);
+                area.parentElement.style.position = 'relative';
+                area.parentElement.appendChild(newBtn);
+            }
+        } else if (btn) {
+            btn.remove();
+        }
+    },
+
+    // ========== 初始化 Esc 键盘 + 模态遮罩关闭 ==========
+    _initModals() {
+        const overlay = document.getElementById('modal-overlay');
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) this.closeModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !overlay.classList.contains('hidden')) {
+                this.closeModal();
+            }
         });
     },
 
@@ -489,6 +599,12 @@ const App = {
         // 加载消息历史
         await this.loadMessages();
 
+        // 绑定滚动监听
+        const msgArea = document.getElementById('messages-area');
+        if (msgArea) {
+            msgArea.addEventListener('scroll', () => this.updateScrollButton());
+        }
+
         // 高亮聊天列表当前项
         this.renderChatList();
         this.hideTyping();
@@ -534,9 +650,13 @@ const App = {
     // ========== 发送消息 ==========
 
     sendMessage() {
+        if (this._sendLock) return;
         const input = document.getElementById('chat-input');
         const content = input.value.trim();
         if (!content) return;
+
+        this._sendLock = true;
+        setTimeout(() => this._sendLock = false, 300);
 
         const msgData = {
             to: this.currentChatId,
@@ -682,11 +802,6 @@ const App = {
         area.insertAdjacentHTML('beforeend', msgHTML);
     },
 
-    scrollToBottom() {
-        const area = document.getElementById('messages-area');
-        if (area) area.scrollTop = area.scrollHeight;
-    },
-
     previewImage(url) {
         document.getElementById('image-preview-img').src = url;
         document.getElementById('image-preview-overlay').classList.remove('hidden');
@@ -763,7 +878,11 @@ const App = {
 
             const listEl = document.getElementById('contacts-list');
             listEl.innerHTML = filtered.length === 0
-                ? `<div class="empty-state"><p>${search ? t('contacts.notFound') : t('contacts.empty')}</p></div>`
+                ? `<div class="empty-state">
+                    <div class="empty-icon">👥</div>
+                    <h3>${search ? t('contacts.notFound') : t('contacts.empty')}</h3>
+                    <p>${t('contacts.emptyHint') || '添加好友后，这里会显示你的通讯录'}</p>
+                </div>`
                 : filtered.map(f => {
                     const isOnline = this.onlineUsers.includes(f.id);
                     const avatarHTML = f.avatarUrl ? `<img src="${f.avatarUrl}" alt="">` : f.avatarText;
@@ -793,7 +912,11 @@ const App = {
 
             const listEl = document.getElementById('moments-list');
             listEl.innerHTML = moments.length === 0
-                ? `<div class="empty-state"><p>${t('moments.empty')}</p></div>`
+                ? `<div class="empty-state">
+                    <div class="empty-icon">📝</div>
+                    <h3>${t('moments.empty')}</h3>
+                    <p>${t('moments.emptyHint') || '发布你的第一条动态吧'}</p>
+                </div>`
                 : moments.map(m => {
                     const avatarHTML = m.avatarUrl ? `<img src="${m.avatarUrl}" alt="">` : m.avatarText;
                     const bgColor = m.avatarUrl ? 'transparent' : m.avatarColor;
@@ -1411,7 +1534,16 @@ const App = {
             } else {
                 badge.classList.add('hidden');
             }
+            this._updateTitleBadge(total);
         } catch {}
+    },
+
+    _updateTitleBadge(count) {
+        if (document.hidden && count > 0) {
+            document.title = `(${count}) ${t('app.name') || '飞友之家'}`;
+        } else {
+            document.title = t('app.name') || '飞友之家';
+        }
     },
 
     // ========== Modal ==========
@@ -1921,23 +2053,6 @@ const App = {
     },
 
     // ========== 工具方法 ==========
-
-    formatTime(timestamp) {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diff = now - date;
-
-        if (diff < 60000) return '刚刚';
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
-
-        const isThisYear = date.getFullYear() === now.getFullYear();
-        const monthDay = `${date.getMonth() + 1}/${date.getDate()}`;
-        const time = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-
-        if (isThisYear) return `${monthDay} ${time}`;
-        return `${date.getFullYear()}/${monthDay} ${time}`;
-    },
 
     getBubbleClass(styleId) {
         const classes = ['bubble-sky', 'bubble-cloud', 'bubble-sunset', 'bubble-stars', 'bubble-captain'];
