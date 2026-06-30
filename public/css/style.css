@@ -164,6 +164,35 @@ input, textarea { font-family: inherit; }
 
 .auth-hint { text-align: center; color: var(--text-light); font-size: 13px; }
 
+.sleep-notice {
+    margin-top: 24px;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, #fff8e1, #fff3cd);
+    border: 1px solid #ffc107;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+.sleep-notice-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.sleep-notice-text strong {
+    display: block;
+    font-size: 13px;
+    color: #856404;
+    margin-bottom: 4px;
+}
+.sleep-notice-text p {
+    font-size: 12px;
+    color: #856404;
+    line-height: 1.6;
+    margin: 0;
+    opacity: 0.85;
+}
+
 /* ========== Main App Layout ========== */
 .main-app {
     height: 100vh;
