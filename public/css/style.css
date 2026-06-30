@@ -846,6 +846,20 @@ input, textarea { font-family: inherit; }
 .admin-msg-from { font-weight: 600; color: var(--primary); }
 .admin-msg-to { font-weight: 600; color: var(--warning); }
 
+/* 聊天监控用户选择列表 */
+.admin-users-mini {
+    display: flex; flex-direction: column; gap: 8px;
+}
+.admin-user-mini-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; border-radius: 10px;
+    background: var(--card-bg); border: 1px solid var(--border);
+    cursor: pointer; transition: var(--transition);
+}
+.admin-user-mini-card:hover {
+    border-color: var(--primary); background: #f8f9ff;
+}
+
 .admin-stats-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
