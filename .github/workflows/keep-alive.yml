@@ -1,0 +1,21 @@
+name: Keep Alive - 防止休眠
+
+on:
+  schedule:
+    # 每10分钟 ping 一次，避免 Render 15分钟无访问后休眠
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping 聊聊 ChatSpace
+        run: |
+          echo "🕐 $(date '+%Y-%m-%d %H:%M:%S') — 正在唤醒..."
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" https://liaoliao-chat.onrender.com)
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ 网站正常运行 (HTTP $RESPONSE)"
+          else
+            echo "⚠️ 返回状态码: $RESPONSE"
+          fi
