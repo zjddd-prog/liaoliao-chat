@@ -131,6 +131,14 @@ async function initTables() {
       console.log('Migration note:', e.message);
     }
 
+    // 迁移：添加 muted_until 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS muted_until BIGINT DEFAULT NULL`);
+      console.log('Migration: muted_until column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
     await client.query('COMMIT');
     console.log('All tables initialized');
   } catch (e) {
