@@ -274,6 +274,21 @@ input, textarea { font-family: inherit; }
 }
 .panel-header h2 { font-size: 18px; font-weight: 700; }
 
+.btn-create-group {
+    display: flex; align-items: center; gap: 5px;
+    padding: 7px 14px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: #fff; border: none; border-radius: 20px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+.btn-create-group:hover {
+    transform: scale(1.05);
+    box-shadow: 0 3px 12px rgba(102,126,234,0.35);
+}
+.btn-create-group-label { font-size: 13px; }
+
 .panel-actions { display: flex; gap: 8px; }
 
 .icon-btn {
@@ -1165,6 +1180,9 @@ input, textarea { font-family: inherit; }
     /* 面板头部 */
     .panel-header { padding: 12px 14px; }
     .panel-header h2 { font-size: 17px; }
+    .btn-create-group { padding: 6px 12px; font-size: 12px; border-radius: 16px; }
+    .btn-create-group svg { width: 16px; height: 16px; }
+    .btn-create-group-label { font-size: 12px; }
 
     /* 搜索框 */
     .search-box { padding: 10px 14px; }
@@ -1329,6 +1347,9 @@ input, textarea { font-family: inherit; }
 
     .panel-header { padding: 10px 12px; }
     .panel-header h2 { font-size: 16px; }
+    .btn-create-group { padding: 5px 10px; font-size: 11px; }
+    .btn-create-group svg { width: 14px; height: 14px; }
+    .btn-create-group-label { font-size: 11px; }
 
     .chat-item { padding: 10px 12px; }
     .chat-avatar { width: 40px; height: 40px; font-size: 16px; }
