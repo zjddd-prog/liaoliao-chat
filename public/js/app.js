@@ -1,4 +1,4 @@
-// ========== 聊聊 ChatSpace - 前端应用 ==========
+// ========== 飞友之家 ChatSpace - 前端应用 ==========
 const App = {
     token: null,
     currentUser: null,
@@ -168,7 +168,7 @@ const App = {
             this.token = data.token;
             this.currentUser = data.user;
             localStorage.setItem('chat_token', this.token);
-            this.toast('注册成功，欢迎来到聊聊！', 'success');
+            this.toast('注册成功，欢迎来到飞友之家！', 'success');
             this.showMainApp();
         } catch (e) {
             this.toast(e.message, 'error');
@@ -256,6 +256,10 @@ const App = {
         this.socket.on('banned', (data) => {
             this.toast(data.message, 'error');
             this.logout();
+        });
+
+        this.socket.on('blocked-error', (data) => {
+            this.toast(data.message, 'error');
         });
 
         this.socket.on('auth-error', (msg) => {
@@ -394,11 +398,14 @@ const App = {
                     const avatarHTML = item.avatarUrl
                         ? `<img src="${item.avatarUrl}" alt="">`
                         : item.avatarText;
+                    const nameClickHandler = item.type === 'private'
+                        ? `onclick="event.stopPropagation();App.viewProfile('${item.id}')"`
+                        : '';
                     return `
                         <div class="chat-item ${isActive ? 'active' : ''}">
                             <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${item.id}')" title="查看主页">${avatarHTML}</div>
                             <div class="chat-info" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
-                                <div class="chat-name">${onlineDot} ${item.name} ${memberTag}</div>
+                                <div class="chat-name"><span ${nameClickHandler} style="cursor:pointer;">${onlineDot} ${item.name}</span> ${memberTag}</div>
                                 <div class="chat-last-msg">${item.lastMsg || '开始聊天吧'}</div>
                             </div>
                             <div class="chat-meta" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
@@ -758,7 +765,7 @@ const App = {
                         <div class="contact-item">
                             <div class="contact-avatar" style="background:${bgColor}" onclick="event.stopPropagation();App.viewProfile('${f.id}')" title="查看主页">${avatarHTML}</div>
                             <div class="contact-info" onclick="App.openChat('private','${f.id}','${f.nickname}','${f.avatarColor}','${f.avatarText}','${f.avatarUrl || ''}')">
-                                <div class="contact-name">${f.nickname}</div>
+                                <div class="contact-name"><span onclick="event.stopPropagation();App.viewProfile('${f.id}')" style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--primary-light);text-underline-offset:2px;">${f.nickname}</span></div>
                                 <div class="contact-bio">${f.bio || ''}</div>
                             </div>
                             ${isOnline ? '<div class="contact-online-dot"></div>' : ''}
@@ -798,7 +805,7 @@ const App = {
                     if (m.comments && m.comments.length > 0) {
                         commentsHTML = `<div class="moment-comments">${m.comments.map(c => `
                             <div class="moment-comment">
-                                <span class="moment-comment-name">${c.nickname}：</span>
+                                <span class="moment-comment-name" style="cursor:pointer;" onclick="App.viewProfile('${c.userId}')">${c.nickname}：</span>
                                 <span class="moment-comment-text">${this.escapeHtml(c.content)}</span>
                             </div>
                         `).join('')}</div>`;
@@ -812,9 +819,9 @@ const App = {
                     return `
                         <div class="moment-card">
                             <div class="moment-header">
-                                <div class="moment-avatar" style="background:${bgColor}">${avatarHTML}</div>
+                                <div class="moment-avatar" style="background:${bgColor};cursor:pointer;" onclick="App.viewProfile('${m.userId}')">${avatarHTML}</div>
                                 <div>
-                                    <div class="moment-name">${m.nickname}</div>
+                                    <div class="moment-name" style="cursor:pointer;" onclick="App.viewProfile('${m.userId}')">${m.nickname}</div>
                                     <div class="moment-time">${this.formatTime(m.createdAt)}</div>
                                 </div>
                                 ${deleteBtn}
@@ -1022,13 +1029,13 @@ const App = {
                     const avatarHTML = u.avatarUrl ? `<img src="${u.avatarUrl}" alt="">` : u.avatarText;
                     const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
                     html += `
-                        <div class="discover-user-card" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">
-                            <div class="discover-user-avatar" style="background:${bgColor}">${avatarHTML}</div>
-                            <div class="discover-user-info">
-                                <div class="discover-user-name">${u.nickname}</div>
+                        <div class="discover-user-card">
+                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${avatarHTML}</div>
+                            <div class="discover-user-info" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">
+                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${u.nickname}</div>
                                 <div class="discover-user-bio">${u.bio || ''}</div>
                             </div>
-                            <button class="btn-secondary btn-sm">聊天</button>
+                            <button class="btn-secondary btn-sm" onclick="App.openChat('private','${u.id}','${u.nickname}','${u.avatarColor}','${u.avatarText}','${u.avatarUrl || ''}')">聊天</button>
                         </div>
                     `;
                 });
@@ -1042,9 +1049,9 @@ const App = {
                     const bgColor = u.avatarUrl ? 'transparent' : u.avatarColor;
                     html += `
                         <div class="discover-user-card">
-                            <div class="discover-user-avatar" style="background:${bgColor}">${avatarHTML}</div>
+                            <div class="discover-user-avatar" style="background:${bgColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${avatarHTML}</div>
                             <div class="discover-user-info">
-                                <div class="discover-user-name">${u.nickname}</div>
+                                <div class="discover-user-name" style="cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${u.id}')">${u.nickname}</div>
                                 <div class="discover-user-bio">${u.bio || ''}</div>
                             </div>
                             <button class="btn-primary btn-sm" onclick="App.addFriend('${u.id}')">+ 好友</button>
@@ -1138,10 +1145,23 @@ const App = {
         }
 
         else if (tab === 'admin-chats') {
-            contentEl.innerHTML = `
-                <p style="color:var(--text-light);font-size:14px;">选择一个用户查看其聊天记录：</p>
-                <p style="color:var(--text-light);font-size:14px;">请先在"用户管理"中点击"查看聊天"按钮</p>
-            `;
+            try {
+                const users = await this.api('/api/admin/users');
+                contentEl.innerHTML = `
+                    <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">选择一个用户查看其聊天记录：</p>
+                    <div class="admin-users-mini">
+                        ${users.map(u => `
+                            <div class="admin-user-mini-card" onclick="App.adminViewChat('${u.id}')">
+                                <div class="admin-user-avatar" style="background:${u.avatarColor}">${u.avatarText}</div>
+                                <span>${u.nickname}</span>
+                                <button class="btn-secondary btn-sm" style="margin-left:auto;">查看聊天</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (e) {
+                contentEl.innerHTML = `<p style="color:red;">${e.message}</p>`;
+            }
         }
 
         else if (tab === 'admin-moments') {
@@ -1525,6 +1545,11 @@ const App = {
         try {
             const user = await this.api(`/api/user/${userId}`);
 
+            // Check blocked status
+            let blockedData = { blockedUsers: [] };
+            try { blockedData = await this.api('/api/blocked'); } catch(e) {}
+            const iBlockedThem = blockedData.blockedUsers.includes(userId);
+
             // Build profile page
             const avatarHTML = user.avatarUrl
                 ? `<img src="${user.avatarUrl}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`
@@ -1576,9 +1601,16 @@ const App = {
                         <span>@${user.username}</span>
                         <span>加入于 ${new Date(user.createdAt).toLocaleDateString()}</span>
                     </div>
-                    <div style="margin-top:12px;">
+                    <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
                         ${user.id !== this.currentUser?.id ?
-                            `<button class="btn-primary btn-sm" onclick="App.openChat('private','${user.id}','${user.nickname}','${user.avatarColor}','${user.avatarText}','${user.avatarUrl || ''}')">💬 发消息</button>`
+                            iBlockedThem ?
+                                `<button class="btn-secondary btn-sm" onclick="App.unblockUser('${user.id}','${user.nickname}')" style="background:#43e97b;color:#fff;">✅ 取消拉黑</button>`
+                                :
+                                `<button class="btn-primary btn-sm" onclick="App.openChat('private','${user.id}','${user.nickname}','${user.avatarColor}','${user.avatarText}','${user.avatarUrl || ''}')">💬 私信</button>
+                                 <button class="btn-danger btn-sm" onclick="App.blockUser('${user.id}','${user.nickname}')" style="background:#ff4757;color:#fff;">🚫 拉黑</button>`
+                            : ''}
+                        ${isSelf && (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') ?
+                            `<button class="btn-primary btn-sm" onclick="App.switchView('admin')" style="background:linear-gradient(135deg,#f5576c,#f093fb);color:#fff;">🛡️ 管理后台</button>`
                             : ''}
                     </div>
                 </div>
@@ -1598,6 +1630,28 @@ const App = {
     closeProfile() {
         document.getElementById('view-profile').classList.add('hidden');
         this.switchView('chats');
+    },
+
+    async blockUser(userId, nickname) {
+        if (!confirm(`确定要拉黑 ${nickname} 吗？拉黑后双方将无法互发消息。`)) return;
+        try {
+            const data = await this.api(`/api/block/${userId}`, 'POST');
+            this.toast(data.message, 'success');
+            this.viewProfile(userId);
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async unblockUser(userId, nickname) {
+        if (!confirm(`确定要取消拉黑 ${nickname} 吗？`)) return;
+        try {
+            const data = await this.api(`/api/unblock/${userId}`, 'POST');
+            this.toast(data.message, 'success');
+            this.viewProfile(userId);
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
     },
 
     uploadAvatar() {
@@ -1644,7 +1698,7 @@ const App = {
             const isAdmin = this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin';
 
             let html = '<div style="text-align:center;padding:20px;">';
-            html += '<p style="font-size:14px;color:var(--text-light);margin-bottom:20px;">如果觉得聊聊不错，欢迎请开发者喝杯咖啡 ☕</p>';
+            html += '<p style="font-size:14px;color:var(--text-light);margin-bottom:20px;">如果觉得飞友之家不错，欢迎请开发者喝杯咖啡 ☕</p>';
 
             if (donation.wechat) {
                 html += `<div class="donation-qr-section">
