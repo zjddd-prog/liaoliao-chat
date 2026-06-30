@@ -34,6 +34,7 @@ const I18N = {
         'nav.createGroup': { 'zh-CN': '建群', en: 'Group', ja: 'グループ', ko: '그룹' },
         'nav.feedback': { 'zh-CN': '反馈', en: 'Feedback', ja: 'フィードバック', ko: '피드백' },
         'nav.logout': { 'zh-CN': '退出', en: 'Logout', ja: 'ログアウト', ko: '로그아웃' },
+        'nav.myProfile': { 'zh-CN': '我的', en: 'Profile', ja: 'プロフィール', ko: '프로필' },
 
         // ---- 侧边栏 ----
         'sidebar.points': { 'zh-CN': '积分', en: 'Points', ja: 'ポイント', ko: '포인트' },
