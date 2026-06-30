@@ -1310,13 +1310,24 @@ async function seedData() {
 // ========== Start Server ==========
 
 async function start() {
-    await initTables();
-    await seedData();
+    try {
+        await initTables();
+        await seedData();
+        console.log('Database: PostgreSQL (Supabase) - connected');
+    } catch (e) {
+        console.error('Database init failed:', e.message);
+        console.error('App will start without database connection.');
+    }
 
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`飞友之家 server running on port ${PORT}`);
-        console.log(`Database: PostgreSQL (Supabase)`);
     });
 }
 
-start();
+start().catch(e => {
+    console.error('Start failed:', e.message);
+    // Still try to start the server anyway
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`飞友之家 server running on port ${PORT} (fallback mode)`);
+    });
+});
