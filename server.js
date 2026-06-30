@@ -67,6 +67,7 @@ if (loadJSON('groups.json').length === 0) {
 if (loadJSON('moments.json').length === 0) saveJSON('moments.json', []);
 if (loadJSON('friendships.json').length === 0) saveJSON('friendships.json', []);
 if (loadJSON('feedbacks.json').length === 0) saveJSON('feedbacks.json', []);
+if (loadJSON('donation.json').length === 0) saveJSON('donation.json', { wechat: '', alipay: '' });
 
 // ========== Middleware ==========
 
@@ -83,7 +84,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
     storage,
-    limits: { fileSize: 3 * 1024 * 1024 },
+    limits: { fileSize: 5 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
         if (/image\/.*/.test(file.mimetype)) cb(null, true);
         else cb(new Error('Only images allowed'), false);
@@ -105,7 +106,14 @@ function authMiddleware(req, res, next) {
 
 function adminMiddleware(req, res, next) {
     authMiddleware(req, res, () => {
-        if (req.user.role !== 'admin') return res.status(403).json({ error: '需要管理员权限' });
+        if (req.user.role !== 'admin' && req.user.role !== 'super_admin') return res.status(403).json({ error: '需要管理员权限' });
+        next();
+    });
+}
+
+function superAdminMiddleware(req, res, next) {
+    authMiddleware(req, res, () => {
+        if (req.user.role !== 'super_admin') return res.status(403).json({ error: '需要超级管理员权限' });
         next();
     });
 }
@@ -132,6 +140,9 @@ app.post('/api/register', (req, res) => {
         avatarColor: colors[Math.floor(Math.random() * colors.length)],
         avatarText: (nickname || username).slice(0, 1).toUpperCase(),
         role: 'user',
+        points: 0,
+        lastCheckinDate: null,
+        bubbleStyle: 0,
         banned: false,
         createdAt: Date.now()
     };
@@ -157,6 +168,9 @@ app.post('/api/register', (req, res) => {
             avatarColor: newUser.avatarColor,
             avatarText: newUser.avatarText,
             role: newUser.role,
+            points: newUser.points,
+            lastCheckinDate: newUser.lastCheckinDate,
+            bubbleStyle: newUser.bubbleStyle,
             createdAt: newUser.createdAt
         }
     });
@@ -182,6 +196,9 @@ app.post('/api/login', (req, res) => {
             avatarColor: user.avatarColor,
             avatarText: user.avatarText,
             role: user.role,
+            points: user.points || 0,
+            lastCheckinDate: user.lastCheckinDate || null,
+            bubbleStyle: user.bubbleStyle || 0,
             createdAt: user.createdAt
         }
     });
@@ -197,7 +214,11 @@ app.get('/api/me', authMiddleware, (req, res) => {
         bio: user.bio,
         avatarColor: user.avatarColor,
         avatarText: user.avatarText,
+        avatarUrl: user.avatarUrl || null,
         role: user.role,
+        points: user.points || 0,
+        lastCheckinDate: user.lastCheckinDate || null,
+        bubbleStyle: user.bubbleStyle || 0,
         createdAt: user.createdAt
     });
 });
@@ -329,7 +350,7 @@ app.post('/api/friends/remove', authMiddleware, (req, res) => {
 // Get chat history (private)
 app.get('/api/messages/private/:userId', authMiddleware, (req, res) => {
     const otherUserId = req.params.userId;
-    const messages = loadJSON('messages.json');
+    const users = loadJSON('users.json');
     const privateMsgs = messages.filter(m =>
         m.type === 'private' &&
         ((m.from === req.user.id && m.to === otherUserId) || (m.from === otherUserId && m.to === req.user.id))
@@ -344,32 +365,49 @@ app.get('/api/messages/private/:userId', authMiddleware, (req, res) => {
     });
     saveJSON('messages.json', updated);
 
-    res.json(privateMsgs.map(m => ({
-        id: m.id,
-        from: m.from,
-        to: m.to,
-        content: m.content,
-        messageType: m.messageType || 'text',
-        timestamp: m.timestamp,
-        read: m.read
-    })));
+    res.json(privateMsgs.map(m => {
+        const fromUser = users.find(u => u.id === m.from);
+        return {
+            id: m.id,
+            from: m.from,
+            to: m.to,
+            content: m.content,
+            messageType: m.messageType || 'text',
+            timestamp: m.timestamp,
+            read: m.read,
+            fromNickname: fromUser?.nickname,
+            fromAvatarColor: fromUser?.avatarColor,
+            fromAvatarText: fromUser?.avatarText,
+            fromAvatarUrl: fromUser?.avatarUrl || null,
+            fromBubbleStyle: fromUser?.bubbleStyle || 0
+        };
+    }));
 });
 
 // Get chat history (group)
 app.get('/api/messages/group/:groupId', authMiddleware, (req, res) => {
     const groupId = req.params.groupId;
     const messages = loadJSON('messages.json');
+    const users = loadJSON('users.json');
     const groupMsgs = messages.filter(m => m.type === 'group' && m.to === groupId)
         .sort((a, b) => a.timestamp - b.timestamp);
 
-    res.json(groupMsgs.map(m => ({
-        id: m.id,
-        from: m.from,
-        to: m.to,
-        content: m.content,
-        messageType: m.messageType || 'text',
-        timestamp: m.timestamp
-    })));
+    res.json(groupMsgs.map(m => {
+        const fromUser = users.find(u => u.id === m.from);
+        return {
+            id: m.id,
+            from: m.from,
+            to: m.to,
+            content: m.content,
+            messageType: m.messageType || 'text',
+            timestamp: m.timestamp,
+            fromNickname: fromUser?.nickname,
+            fromAvatarColor: fromUser?.avatarColor,
+            fromAvatarText: fromUser?.avatarText,
+            fromAvatarUrl: fromUser?.avatarUrl || null,
+            fromBubbleStyle: fromUser?.bubbleStyle || 0
+        };
+    }));
 });
 
 // Get unread counts
@@ -405,62 +443,6 @@ app.get('/api/messages/unread', authMiddleware, (req, res) => {
 // ========== Group APIs ==========
 
 // Get groups I'm in
-app.get('/api/groups', authMiddleware, (req, res) => {
-    const groups = loadJSON('groups.json');
-    const myGroups = groups.filter(g => g.members.includes(req.user.id));
-
-    res.json(myGroups.map(g => ({
-        id: g.id,
-        name: g.name,
-        description: g.description,
-        avatarColor: g.avatarColor,
-        avatarText: g.avatarText,
-        memberCount: g.members.length,
-        createdAt: g.createdAt
-    })));
-});
-
-// Create group
-app.post('/api/groups/create', authMiddleware, (req, res) => {
-    const { name, description } = req.body;
-    if (!name) return res.status(400).json({ error: '群名必填' });
-
-    const groups = loadJSON('groups.json');
-    const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
-    const newGroup = {
-        id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        name,
-        description: description || '',
-        avatarColor: colors[Math.floor(Math.random() * colors.length)],
-        avatarText: name.slice(0, 1),
-        members: [req.user.id],
-        createdAt: Date.now()
-    };
-    groups.push(newGroup);
-    saveJSON('groups.json', groups);
-
-    io.emit('group-created', newGroup);
-    res.json({ success: true, group: newGroup });
-});
-
-// Join group
-app.post('/api/groups/join', authMiddleware, (req, res) => {
-    const { groupId } = req.body;
-    const groups = loadJSON('groups.json');
-    const group = groups.find(g => g.id === groupId);
-    if (!group) return res.status(404).json({ error: '群不存在' });
-    if (group.members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
-
-    group.members.push(req.user.id);
-    saveJSON('groups.json', groups);
-
-    // Notify group members
-    io.to(groupId).emit('group-member-joined', { groupId, userId: req.user.id, nickname: req.user.nickname });
-    io.emit('groups-updated');
-
-    res.json({ success: true });
-});
-
 // Get group members
 app.get('/api/groups/:groupId/members', authMiddleware, (req, res) => {
     const groups = loadJSON('groups.json');
@@ -591,7 +573,7 @@ app.delete('/api/moments/:momentId', authMiddleware, (req, res) => {
     const moment = moments.find(m => m.id === req.params.momentId);
 
     if (!moment) return res.status(404).json({ error: '动态不存在' });
-    if (moment.userId !== req.user.id && req.user.role !== 'admin') {
+    if (moment.userId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
         return res.status(403).json({ error: '无权删除' });
     }
 
@@ -608,8 +590,8 @@ app.get('/api/admin/users', adminMiddleware, (req, res) => {
     const users = loadJSON('users.json');
     res.json(users.filter(u => u.role !== 'system').map(u => ({
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
-        avatarColor: u.avatarColor, avatarText: u.avatarText,
-        role: u.role, banned: u.banned, createdAt: u.createdAt
+        avatarColor: u.avatarColor, avatarText: u.avatarText, avatarUrl: u.avatarUrl || null,
+        role: u.role, banned: u.banned, createdAt: u.createdAt, points: u.points || 0
     })));
 });
 
@@ -617,7 +599,8 @@ app.post('/api/admin/ban/:userId', adminMiddleware, (req, res) => {
     const users = loadJSON('users.json');
     const user = users.find(u => u.id === req.params.userId);
     if (!user) return res.status(404).json({ error: '用户不存在' });
-    if (user.role === 'admin') return res.status(400).json({ error: '不能封禁管理员' });
+    if (user.role === 'super_admin') return res.status(400).json({ error: '不能封禁超级管理员' });
+    if (user.role === 'admin' && req.user.role !== 'super_admin') return res.status(400).json({ error: '只有超级管理员可以封禁管理员' });
 
     user.banned = !user.banned;
     saveJSON('users.json', users);
@@ -641,7 +624,8 @@ app.delete('/api/admin/user/:userId', adminMiddleware, (req, res) => {
     let users = loadJSON('users.json');
     const user = users.find(u => u.id === userId);
     if (!user) return res.status(404).json({ error: '用户不存在' });
-    if (user.role === 'admin') return res.status(400).json({ error: '不能删除管理员' });
+    if (user.role === 'super_admin') return res.status(400).json({ error: '不能删除超级管理员' });
+    if (user.role === 'admin' && req.user.role !== 'super_admin') return res.status(400).json({ error: '只有超级管理员可以删除管理员' });
 
     // Remove from all groups
     let groups = loadJSON('groups.json');
@@ -682,9 +666,21 @@ app.get('/api/admin/messages/:userId', adminMiddleware, (req, res) => {
     const messages = loadJSON('messages.json');
     const users = loadJSON('users.json');
 
-    const userMsgs = messages.filter(m => m.from === userId || m.to === userId)
+    // If requester is a regular admin (not super_admin) and trying to view super_admin's chats
+    const targetUser = users.find(u => u.id === userId);
+    if (req.user.role !== 'super_admin' && targetUser && targetUser.role === 'super_admin') {
+        return res.status(403).json({ error: '无权查看超级管理员的聊天记录' });
+    }
+
+    let userMsgs = messages.filter(m => m.from === userId || m.to === userId)
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 200);
+
+    // Also filter out super_admin messages from the list if requester is regular admin
+    const superAdminId = users.find(u => u.role === 'super_admin')?.id;
+    if (req.user.role !== 'super_admin' && superAdminId) {
+        userMsgs = userMsgs.filter(m => !(m.from === superAdminId || m.to === superAdminId));
+    }
 
     res.json(userMsgs.map(m => {
         const fromUser = users.find(u => u.id === m.from);
@@ -734,7 +730,217 @@ app.get('/api/admin/stats', adminMiddleware, (req, res) => {
     });
 });
 
-// ========== Feedback API ==========
+// ========== Check-in (每日签到) ==========
+
+app.post('/api/checkin', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+    const today = new Date().toDateString();
+
+    if (user.lastCheckinDate === today) {
+        return res.status(400).json({ error: '今天已经签到过了！' });
+    }
+
+    user.points = (user.points || 0) + 10;
+    user.lastCheckinDate = today;
+    saveJSON('users.json', users);
+
+    res.json({ success: true, points: user.points, earned: 10, message: '签到成功！+10积分' });
+});
+
+// ========== Bubble Shop (气泡商城) ==========
+
+const BUBBLE_STYLES = [
+    { id: 0, name: '经典白色', price: 0, class: 'bubble-default', desc: '默认聊天气泡' },
+    { id: 1, name: '薄荷绿', price: 100, class: 'bubble-mint', desc: '清新薄荷渐变' },
+    { id: 2, name: '星空紫', price: 300, class: 'bubble-purple', desc: '深邃星空渐变' },
+    { id: 3, name: '日落橙', price: 600, class: 'bubble-sunset', desc: '温暖日落余晖' },
+    { id: 4, name: '极光幻彩', price: 1000, class: 'bubble-aurora', desc: '绚丽极光变幻' }
+];
+
+app.get('/api/bubbles', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+    const userBubbleStyle = user.bubbleStyle || 0;
+    const isAdmin = user.role === 'super_admin' || user.role === 'admin';
+
+    const bubbles = BUBBLE_STYLES.map(b => ({
+        ...b,
+        owned: isAdmin || b.id === 0 || b.id === userBubbleStyle,
+        equipped: b.id === userBubbleStyle,
+        canAfford: isAdmin || (user.points || 0) >= b.price
+    }));
+
+    res.json(bubbles);
+});
+
+app.post('/api/bubbles/purchase', authMiddleware, (req, res) => {
+    const { bubbleId } = req.body;
+    const bubble = BUBBLE_STYLES.find(b => b.id === bubbleId);
+    if (!bubble) return res.status(404).json({ error: '气泡不存在' });
+
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+
+    // Admins get all free
+    if (user.role !== 'super_admin' && user.role !== 'admin') {
+        if ((user.points || 0) < bubble.price) {
+            return res.status(400).json({ error: '积分不足' });
+        }
+        user.points -= bubble.price;
+    }
+
+    // Update bubble style
+    user.bubbleStyle = bubbleId;
+    saveJSON('users.json', users);
+
+    res.json({ success: true, points: user.points, bubbleStyle: bubbleId, message: `已装备「${bubble.name}」气泡！` });
+});
+
+app.put('/api/bubbles/equip', authMiddleware, (req, res) => {
+    const { bubbleId } = req.body;
+    const bubble = BUBBLE_STYLES.find(b => b.id === bubbleId);
+    if (!bubble) return res.status(404).json({ error: '气泡不存在' });
+
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.user.id);
+    const isAdmin = user.role === 'super_admin' || user.role === 'admin';
+
+    // Only allow equip if owned (or admin)
+    if (!isAdmin && bubbleId !== 0 && user.bubbleStyle !== bubbleId) {
+        return res.status(400).json({ error: '你还没有购买这个气泡！请先兑换' });
+    }
+
+    user.bubbleStyle = bubbleId;
+    saveJSON('users.json', users);
+
+    res.json({ success: true, bubbleStyle: bubbleId });
+});
+
+// ========== User Profile (用户主页) ==========
+
+app.get('/api/user/:userId', authMiddleware, (req, res) => {
+    const users = loadJSON('users.json');
+    const user = users.find(u => u.id === req.params.userId);
+    if (!user) return res.status(404).json({ error: '用户不存在' });
+
+    const moments = loadJSON('moments.json');
+    const userMoments = moments
+        .filter(m => m.userId === user.id)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .slice(0, 20);
+
+    res.json({
+        id: user.id,
+        username: user.username,
+        nickname: user.nickname,
+        bio: user.bio,
+        avatarColor: user.avatarColor,
+        avatarText: user.avatarText,
+        avatarUrl: user.avatarUrl || null,
+        role: user.role,
+        createdAt: user.createdAt,
+        moments: userMoments.map(m => ({
+            id: m.id,
+            content: m.content,
+            images: m.images || [],
+            likes: m.likes || [],
+            comments: m.comments || [],
+            createdAt: m.createdAt
+        }))
+    });
+});
+
+// ========== Group APIs (updated for public/private) ==========
+
+app.get('/api/groups', authMiddleware, (req, res) => {
+    const groups = loadJSON('groups.json');
+    // Show: groups I'm in + all public groups
+    const myGroups = groups.filter(g =>
+        g.members.includes(req.user.id) || g.type === 'public' || g.id === 'g_public'
+    );
+
+    res.json(myGroups.map(g => ({
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        type: g.type || 'public',
+        avatarColor: g.avatarColor,
+        avatarText: g.avatarText,
+        memberCount: g.members.length,
+        isMember: g.members.includes(req.user.id),
+        hasPassword: !!g.password,
+        createdAt: g.createdAt
+    })));
+});
+
+// Create group (updated)
+app.post('/api/groups/create', authMiddleware, (req, res) => {
+    const { name, description, type, password } = req.body;
+    if (!name) return res.status(400).json({ error: '群名必填' });
+
+    const groups = loadJSON('groups.json');
+    const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
+    const newGroup = {
+        id: 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        name,
+        description: description || '',
+        type: type || 'public',
+        password: type === 'private' ? (password || '') : '',
+        avatarColor: colors[Math.floor(Math.random() * colors.length)],
+        avatarText: name.slice(0, 1),
+        members: [req.user.id],
+        createdAt: Date.now()
+    };
+    groups.push(newGroup);
+    saveJSON('groups.json', groups);
+
+    io.emit('group-created', newGroup);
+    res.json({ success: true, group: newGroup });
+});
+
+// Join group (updated for password check)
+app.post('/api/groups/join', authMiddleware, (req, res) => {
+    const { groupId, password } = req.body;
+    const groups = loadJSON('groups.json');
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return res.status(404).json({ error: '群不存在' });
+    if (group.members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
+
+    // Check password for private groups
+    if (group.type === 'private' && group.password && group.password !== (password || '')) {
+        return res.status(403).json({ error: '密码错误，无法加入私密群组' });
+    }
+
+    group.members.push(req.user.id);
+    saveJSON('groups.json', groups);
+
+    io.to(groupId).emit('group-member-joined', { groupId, userId: req.user.id, nickname: req.user.nickname });
+    io.emit('groups-updated');
+
+    res.json({ success: true });
+});
+
+// ========== Donation (打赏) ==========
+
+app.get('/api/donation', authMiddleware, (req, res) => {
+    const donation = loadJSON('donation.json') || { wechat: '', alipay: '' };
+    res.json(donation);
+});
+
+app.post('/api/admin/donation', adminMiddleware, upload.fields([{ name: 'wechat', maxCount: 1 }, { name: 'alipay', maxCount: 1 }]), (req, res) => {
+    const donation = loadJSON('donation.json') || { wechat: '', alipay: '' };
+
+    if (req.files?.wechat?.[0]) {
+        donation.wechat = `/uploads/${req.files.wechat[0].filename}`;
+    }
+    if (req.files?.alipay?.[0]) {
+        donation.alipay = `/uploads/${req.files.alipay[0].filename}`;
+    }
+
+    saveJSON('donation.json', donation);
+    res.json({ success: true, donation });
+});
 
 app.post('/api/feedback', authMiddleware, (req, res) => {
     const { content } = req.body;
@@ -744,7 +950,7 @@ app.post('/api/feedback', authMiddleware, (req, res) => {
 
     const feedbacks = loadJSON('feedbacks.json');
     const users = loadJSON('users.json');
-    const user = users.find(u => u.id === req.userId);
+    const user = users.find(u => u.id === req.user.id);
 
     const feedback = {
         id: 'fb_' + Date.now(),
@@ -763,7 +969,7 @@ app.post('/api/feedback', authMiddleware, (req, res) => {
     // Notify admin sockets
     const sockets = io.sockets.sockets;
     for (const [sid, socket] of sockets) {
-        if (socket.role === 'admin') {
+        if (socket.role === 'super_admin' || socket.role === 'admin') {
             socket.emit('new-feedback', feedback);
         }
     }
@@ -786,9 +992,9 @@ app.post('/api/admin/feedback/:feedbackId/resolve', adminMiddleware, (req, res) 
     res.json({ success: true, status: fb.status });
 });
 
-// ========== Admin: Promote user to admin ==========
+// ========== Admin: Promote user to admin (super_admin only) ==========
 
-app.post('/api/admin/promote/:userId', adminMiddleware, (req, res) => {
+app.post('/api/admin/promote/:userId', superAdminMiddleware, (req, res) => {
     const users = loadJSON('users.json');
     const user = users.find(u => u.id === req.params.userId);
     if (!user) return res.status(404).json({ error: '用户不存在' });
@@ -830,7 +1036,11 @@ io.on('connection', (socket) => {
 
         socket.userId = user.id;
         socket.userNickname = user.nickname;
+        socket.userAvatarColor = user.avatarColor;
+        socket.userAvatarText = user.avatarText;
+        socket.userAvatarUrl = user.avatarUrl || null;
         socket.role = user.role || 'user';
+        socket.bubbleStyle = user.bubbleStyle || 0;
         onlineUsers[user.id] = socket.id;
 
         // Join user's groups
@@ -875,7 +1085,9 @@ io.on('connection', (socket) => {
                 ...msg,
                 fromNickname: fromUser?.nickname,
                 fromAvatarColor: fromUser?.avatarColor,
-                fromAvatarText: fromUser?.avatarText
+                fromAvatarText: fromUser?.avatarText,
+                fromAvatarUrl: fromUser?.avatarUrl || null,
+                fromBubbleStyle: fromUser?.bubbleStyle || 0
             });
         }
 
@@ -910,7 +1122,9 @@ io.on('connection', (socket) => {
             ...msg,
             fromNickname: fromUser?.nickname,
             fromAvatarColor: fromUser?.avatarColor,
-            fromAvatarText: fromUser?.avatarText
+            fromAvatarText: fromUser?.avatarText,
+            fromAvatarUrl: fromUser?.avatarUrl || null,
+            fromBubbleStyle: fromUser?.bubbleStyle || 0
         });
     });
 
@@ -954,7 +1168,7 @@ io.on('connection', (socket) => {
 
 // Create admin account if not exists
 const users = loadJSON('users.json');
-if (!users.find(u => u.role === 'admin')) {
+if (!users.find(u => u.role === 'super_admin')) {
     const admin = {
         id: 'u_admin',
         username: 'admin',
@@ -963,7 +1177,10 @@ if (!users.find(u => u.role === 'admin')) {
         bio: '聊聊平台管理员',
         avatarColor: '#f5576c',
         avatarText: '管',
-        role: 'admin',
+        role: 'super_admin',
+        points: 99999,
+        lastCheckinDate: null,
+        bubbleStyle: 4,
         banned: false,
         createdAt: Date.now()
     };
