@@ -23,6 +23,7 @@ if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+app.set('trust proxy', 1);
 
 const storage = multer.diskStorage({
     destination: UPLOADS_DIR,
@@ -44,6 +45,16 @@ const upload = multer({
 
 function genId(prefix) {
     return (prefix || 'x') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+}
+
+// 简单频率限制器（内存）
+const rateLimiter = {};
+function checkRateLimit(key, cooldownMs = 2000) {
+    const now = Date.now();
+    const last = rateLimiter[key] || 0;
+    if (now - last < cooldownMs) return false;
+    rateLimiter[key] = now;
+    return true;
 }
 
 function cleanupExpiredBubble(user) {
@@ -115,6 +126,10 @@ function superAdminMiddleware(req, res, next) {
 app.post('/api/register', async (req, res) => {
     try {
         const { username, password, nickname, bio } = req.body;
+        const ip = req.ip || req.connection.remoteAddress;
+        if (!checkRateLimit('reg_' + ip, 3000)) {
+            return res.status(429).json({ error: '注册太频繁，请稍后再试' });
+        }
         if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' });
         if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名2-20字符' });
         if (password.length < 4) return res.status(400).json({ error: '密码至少4位' });
@@ -158,6 +173,10 @@ app.post('/api/register', async (req, res) => {
 app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
+        const ip = req.ip || req.connection.remoteAddress;
+        if (!checkRateLimit('login_' + ip, 1000)) {
+            return res.status(429).json({ error: '操作太频繁，请稍后再试' });
+        }
         const r = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
         if (r.rows.length === 0) return res.status(400).json({ error: '用户名不存在' });
         const user = r.rows[0];
@@ -384,6 +403,76 @@ app.get('/api/messages/group/:groupId', authMiddleware, async (req, res) => {
                 fromBubbleStyle: fromUser?.bubble_style || 0
             };
         }));
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// Get last messages for chat list (batch)
+app.get('/api/chats/last-messages', authMiddleware, async (req, res) => {
+    try {
+        const result = {};
+
+        // Get friend IDs
+        const friendshipsR = await pool.query(
+            "SELECT * FROM friendships WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'",
+            [req.user.id]
+        );
+        const friendIds = friendshipsR.rows.map(f => f.user_id === req.user.id ? f.friend_id : f.user_id);
+
+        // Get user's groups
+        const groupsR = await pool.query(
+            "SELECT id FROM groups_t WHERE members @> $1::jsonb",
+            [JSON.stringify([req.user.id])]
+        );
+        const groupIds = groupsR.rows.map(g => g.id);
+
+        // Batch query: last private message for each friend
+        if (friendIds.length > 0) {
+            const privateMsgs = await pool.query(
+                `SELECT DISTINCT ON (
+                    CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
+                         ELSE target_id || '_' || sender_id END
+                ) sender_id, target_id, content, message_type, created_at
+                FROM messages
+                WHERE type = 'private'
+                  AND ((sender_id = $1 AND target_id = ANY($2::text[]))
+                    OR (sender_id = ANY($2::text[]) AND target_id = $1))
+                ORDER BY
+                    CASE WHEN sender_id < target_id THEN sender_id || '_' || target_id
+                         ELSE target_id || '_' || sender_id END,
+                    created_at DESC`,
+                [req.user.id, friendIds]
+            );
+            privateMsgs.rows.forEach(m => {
+                const otherId = m.sender_id === req.user.id ? m.target_id : m.sender_id;
+                result[otherId] = {
+                    content: m.message_type === 'image' ? '[图片]' : m.content,
+                    messageType: m.message_type,
+                    timestamp: m.created_at
+                };
+            });
+        }
+
+        // Batch query: last group message for each group
+        if (groupIds.length > 0) {
+            const groupMsgs = await pool.query(
+                `SELECT DISTINCT ON (target_id) target_id, content, message_type, created_at, sender_id
+                FROM messages
+                WHERE type = 'group' AND target_id = ANY($1::text[])
+                ORDER BY target_id, created_at DESC`,
+                [groupIds]
+            );
+            groupMsgs.rows.forEach(m => {
+                result[m.target_id] = {
+                    content: m.message_type === 'image' ? '[图片]' : m.content,
+                    messageType: m.message_type,
+                    timestamp: m.created_at
+                };
+            });
+        }
+
+        res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -1165,6 +1254,13 @@ io.on('connection', (socket) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
 
+        // 消息长度限制
+        if (!content || (typeof content === 'string' && content.length > 5000)) return;
+
+        // 频率限制：每秒最多3条
+        const rateKey = 'msg_' + socket.userId;
+        if (!checkRateLimit(rateKey, 333)) return;
+
         const [fromR, toR] = await Promise.all([
             pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]),
             pool.query('SELECT * FROM users WHERE id = $1', [to])
@@ -1207,6 +1303,13 @@ io.on('connection', (socket) => {
     socket.on('group-message', async (data) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
+
+        // 消息长度限制
+        if (!content || (typeof content === 'string' && content.length > 5000)) return;
+
+        // 频率限制：每秒最多3条
+        const rateKey = 'msg_' + socket.userId;
+        if (!checkRateLimit(rateKey, 333)) return;
 
         const msgId = genId('msg');
         const now = Date.now();
