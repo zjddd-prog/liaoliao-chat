@@ -164,35 +164,6 @@ input, textarea { font-family: inherit; }
 
 .auth-hint { text-align: center; color: var(--text-light); font-size: 13px; }
 
-.sleep-notice {
-    margin-top: 24px;
-    padding: 14px 16px;
-    background: linear-gradient(135deg, #fff8e1, #fff3cd);
-    border: 1px solid #ffc107;
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-}
-.sleep-notice-icon {
-    font-size: 22px;
-    flex-shrink: 0;
-    line-height: 1;
-}
-.sleep-notice-text strong {
-    display: block;
-    font-size: 13px;
-    color: #856404;
-    margin-bottom: 4px;
-}
-.sleep-notice-text p {
-    font-size: 12px;
-    color: #856404;
-    line-height: 1.6;
-    margin: 0;
-    opacity: 0.85;
-}
-
 /* ========== Main App Layout ========== */
 .main-app {
     height: 100vh;
@@ -360,6 +331,7 @@ input, textarea { font-family: inherit; }
     color: white;
     flex-shrink: 0;
     overflow: hidden;
+    cursor: pointer;
 }
 .chat-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
@@ -367,6 +339,7 @@ input, textarea { font-family: inherit; }
     flex: 1;
     margin-left: 12px;
     overflow: hidden;
+    cursor: pointer;
 }
 .chat-name { font-size: 15px; font-weight: 600; }
 .chat-last-msg {
@@ -383,6 +356,7 @@ input, textarea { font-family: inherit; }
     align-items: flex-end;
     gap: 4px;
     margin-left: 8px;
+    cursor: pointer;
 }
 .chat-time { font-size: 12px; color: var(--text-light); }
 .chat-unread {
@@ -1329,3 +1303,249 @@ input, textarea { font-family: inherit; }
     transition: var(--transition);
 }
 .admin-promote-btn:hover { background: #ffc107; transform: scale(1.03); }
+
+/* ========== 侧边栏积分区 ========== */
+
+.sidebar-points {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 10px 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+}
+.points-value {
+    font-size: 18px; font-weight: 700; color: #f5576c;
+    font-variant-numeric: tabular-nums;
+}
+.points-label {
+    font-size: 10px; color: var(--text-light);
+}
+.checkin-btn {
+    margin-top: 4px; padding: 4px 12px; border: none; border-radius: 12px;
+    background: linear-gradient(135deg, #f5576c, #ff8a65);
+    color: #fff; font-size: 11px; font-weight: 600; cursor: pointer;
+    transition: var(--transition);
+}
+.checkin-btn:hover { transform: scale(1.05); opacity: 0.9; }
+.checkin-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ========== 侧边栏底部按钮 ========== */
+
+.sidebar-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px; border: none; border-radius: 8px;
+    background: transparent; color: var(--text-light);
+    cursor: pointer; font-size: 13px; transition: var(--transition);
+    width: 100%; text-align: left;
+}
+.sidebar-btn:hover { background: var(--bg); color: var(--primary); }
+.sidebar-btn-label { font-size: 12px; }
+
+/* ========== 聊天气泡风格 ========== */
+
+/* 0 — 默认（免费） */
+.msg-bubble.bubble-default {
+    background: linear-gradient(135deg, #f0f0f0, #fafafa);
+    color: var(--text); border: 1px solid var(--border);
+}
+.msg-row.self .msg-bubble.bubble-default {
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: #fff; border: none;
+}
+
+/* 1 — 薄荷绿 (100积分) */
+.msg-bubble.bubble-mint { background: linear-gradient(135deg, #e8f5e9, #c8e6c9); color: #2e7d32; border: 1px solid #a5d6a7; }
+.msg-row.self .msg-bubble.bubble-mint { background: linear-gradient(135deg, #43a047, #66bb6a); color: #fff; border: none; }
+
+/* 2 — 紫罗兰 (300积分) */
+.msg-bubble.bubble-purple { background: linear-gradient(135deg, #f3e5f5, #e1bee7); color: #6a1b9a; border: 1px solid #ce93d8; }
+.msg-row.self .msg-bubble.bubble-purple { background: linear-gradient(135deg, #8e24aa, #ab47bc); color: #fff; border: none; }
+
+/* 3 — 日落橙 (600积分) */
+.msg-bubble.bubble-sunset { background: linear-gradient(135deg, #fff3e0, #ffe0b2); color: #e65100; border: 1px solid #ffcc80; }
+.msg-row.self .msg-bubble.bubble-sunset { background: linear-gradient(135deg, #ff6d00, #ff9100); color: #fff; border: none; }
+
+/* 4 — 极光渐变 (1000积分) */
+.msg-bubble.bubble-aurora {
+    background: linear-gradient(135deg, #e0f7fa, #b2ebf2, #f3e5f5);
+    color: #0d47a1; border: 1px solid #80deea;
+}
+.msg-row.self .msg-bubble.bubble-aurora {
+    background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
+    color: #fff; border: none;
+}
+
+/* ========== 气泡商城 ========== */
+
+.bubble-shop-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px; padding: 8px 0;
+}
+.bubble-shop-item {
+    border: 2px solid var(--border); border-radius: 12px; padding: 16px 12px;
+    text-align: center; cursor: pointer; transition: var(--transition);
+    background: #fff; position: relative;
+}
+.bubble-shop-item:hover { border-color: var(--primary); transform: translateY(-2px); box-shadow: var(--shadow); }
+.bubble-shop-item.owned { border-color: #43e97b; }
+.bubble-shop-item.owned::after {
+    content: '✅ 已拥有'; position: absolute; top: 6px; right: 8px;
+    font-size: 10px; color: #43e97b; font-weight: 600;
+}
+.bubble-shop-preview {
+    width: 100%; padding: 10px; border-radius: 8px; margin-bottom: 8px;
+    font-size: 12px; min-height: 40px; display: flex; align-items: center; justify-content: center;
+}
+.bubble-shop-name { font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.bubble-shop-price { font-size: 12px; color: #f5576c; font-weight: 700; }
+.bubble-shop-price .free { color: #43e97b; }
+.bubble-shop-current { font-size: 11px; color: var(--primary); font-weight: 600; }
+
+/* ========== 个人主页 ========== */
+
+.profile-header-area {
+    text-align: center; padding: 24px 16px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, var(--primary-light) 0%, #fff 100%);
+}
+.profile-big-avatar {
+    width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; color: #fff; font-weight: 700; overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.profile-big-avatar img {
+    width: 100%; height: 100%; object-fit: cover;
+}
+.profile-nickname { font-size: 20px; font-weight: 700; color: var(--text); }
+.profile-username { font-size: 13px; color: var(--text-light); margin: 4px 0; }
+.profile-bio { font-size: 14px; color: var(--text); margin-top: 8px; max-width: 300px; margin-left: auto; margin-right: auto; }
+.profile-role-badge {
+    display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 11px;
+    font-weight: 600; margin-top: 6px;
+}
+.profile-role-badge.super_admin { background: #ffd700; color: #333; }
+.profile-role-badge.admin { background: #667eea; color: #fff; }
+.profile-role-badge.user { background: var(--bg); color: var(--text-light); }
+
+.profile-moments-section { padding: 16px; }
+.profile-section-title {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+}
+
+/* 头像上传区域 */
+.avatar-upload-area {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 12px 0;
+}
+.avatar-upload-btn {
+    padding: 8px 16px; border: 2px dashed var(--border); border-radius: 8px;
+    cursor: pointer; font-size: 13px; color: var(--primary); transition: var(--transition);
+}
+.avatar-upload-btn:hover { border-color: var(--primary); background: rgba(102,126,234,0.05); }
+.avatar-upload-status { font-size: 12px; color: var(--text-light); }
+
+/* ========== 打赏页 ========== */
+
+.donation-content {
+    padding: 24px 16px; text-align: center;
+}
+.donation-intro {
+    font-size: 14px; color: var(--text-light); margin-bottom: 20px;
+}
+.donation-qr-section {
+    background: #fff; border-radius: 12px; padding: 16px;
+    margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.donation-qr-label {
+    font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 12px;
+}
+.donation-qr-img {
+    max-width: 200px; width: 100%; border-radius: 8px; border: 1px solid var(--border);
+}
+.donation-empty {
+    padding: 40px; color: var(--text-light); font-size: 14px;
+}
+.donation-upload-row {
+    display: flex; align-items: center; gap: 12px; justify-content: center;
+}
+.donation-upload-btn {
+    padding: 10px 20px; border: 2px dashed var(--border); border-radius: 8px;
+    cursor: pointer; color: var(--primary); font-size: 14px; transition: var(--transition);
+}
+.donation-upload-btn:hover { border-color: var(--primary); background: rgba(102,126,234,0.05); }
+
+/* ========== 群组类型标签 ========== */
+
+.group-type-tag {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    font-weight: 600; margin-left: 6px; vertical-align: middle;
+}
+.group-type-tag.group-type-public { background: #d4edda; color: #155724; }
+.group-type-tag.group-type-private { background: #fff3cd; color: #856404; }
+
+/* ========== 建群表单 ========== */
+
+.group-form input, .group-form textarea {
+    width: 100%; padding: 10px; border: 2px solid var(--border);
+    border-radius: 8px; margin-bottom: 10px; font-size: 14px;
+}
+.group-form input:focus, .group-form textarea:focus {
+    outline: none; border-color: var(--primary);
+}
+
+/* ========== 模态框内积分显示 ========== */
+
+.modal-points-info {
+    font-size: 13px; color: #f5576c; font-weight: 600; margin-bottom: 12px;
+    text-align: center;
+}
+
+/* ========== 气泡商城模态框内样式 ========== */
+
+.bubble-grid {
+    display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto;
+    padding: 4px;
+}
+.bubble-item {
+    display: flex; align-items: center; gap: 12px; padding: 12px;
+    border: 2px solid var(--border); border-radius: 12px; background: #fff;
+    transition: var(--transition);
+}
+.bubble-item:hover { border-color: var(--primary); }
+.bubble-item.equipped { border-color: var(--primary); background: #f0f4ff; }
+.bubble-preview {
+    min-width: 80px; padding: 8px; border-radius: 10px; text-align: center;
+    font-size: 11px;
+}
+.bubble-preview-msg {
+    display: inline-block; padding: 8px 14px; border-radius: 12px;
+    color: #fff; font-size: 12px; font-weight: 500;
+}
+.bubble-info { flex: 1; min-width: 0; }
+.bubble-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.bubble-desc { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.bubble-price { font-size: 12px; color: #f5576c; font-weight: 600; margin-top: 2px; }
+.bubble-badge {
+    display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    font-weight: 600; margin-top: 4px;
+}
+.bubble-badge.equipped { background: #d4edda; color: #155724; }
+.bubble-badge.owned { background: #e3f2fd; color: #1565c0; }
+.bubble-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ========== 个人主页 stats ========== */
+
+.profile-stats {
+    display: flex; gap: 16px; justify-content: center; margin-top: 8px;
+    font-size: 12px; color: var(--text-light);
+}
+.profile-stats span { display: flex; align-items: center; gap: 4px; }
+
+.profile-name { font-size: 20px; font-weight: 700; color: var(--text); }
+
+.profile-moments { display: flex; flex-direction: column; gap: 10px; }
+
+/* ========== 通讯录在线点 ========== */
+
+.contact-online-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #43e97b;
+    margin-left: auto; flex-shrink: 0;
+}
