@@ -12,6 +12,9 @@ const App = {
     emojiOpen: false,
     pendingImages: [],
     typingTimer: null,
+    userPoints: 0,
+    userBubbleStyle: 0,
+    profileUserId: null,
 
     // ========== 初始化 ==========
 
@@ -111,11 +114,14 @@ const App = {
     showMainApp() {
         document.getElementById('auth-page').classList.add('hidden');
         document.getElementById('main-app').classList.remove('hidden');
+        this.userPoints = this.currentUser?.points || 0;
+        this.userBubbleStyle = this.currentUser?.bubbleStyle || 0;
         this.updateNavAvatar();
+        this.updatePointsDisplay();
         this.connectSocket();
         this.renderAll();
-        // 显示管理员入口
-        if (this.currentUser?.role === 'admin') {
+        // 显示管理员入口 (both super_admin and admin)
+        if (this.currentUser?.role === 'super_admin' || this.currentUser?.role === 'admin') {
             document.getElementById('nav-admin').classList.remove('hidden');
         }
     },
@@ -258,8 +264,7 @@ const App = {
 
         this.socket.on('promoted', (data) => {
             this.toast(data.message, 'success');
-            this.user.role = 'admin';
-            // Show admin nav button
+            this.currentUser.role = 'admin';
             const adminNav = document.getElementById('nav-admin');
             if (adminNav) adminNav.classList.remove('hidden');
         });
@@ -390,13 +395,13 @@ const App = {
                         ? `<img src="${item.avatarUrl}" alt="">`
                         : item.avatarText;
                     return `
-                        <div class="chat-item ${isActive ? 'active' : ''}" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
-                            <div class="chat-avatar" style="background:${item.avatarColor}">${avatarHTML}</div>
-                            <div class="chat-info">
+                        <div class="chat-item ${isActive ? 'active' : ''}">
+                            <div class="chat-avatar" style="background:${item.avatarColor};cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${item.id}')" title="查看主页">${avatarHTML}</div>
+                            <div class="chat-info" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
                                 <div class="chat-name">${onlineDot} ${item.name} ${memberTag}</div>
                                 <div class="chat-last-msg">${item.lastMsg || '开始聊天吧'}</div>
                             </div>
-                            <div class="chat-meta">
+                            <div class="chat-meta" onclick="App.openChat('${item.type}','${item.id}','${item.name}','${item.avatarColor}','${item.avatarText}','${item.avatarUrl || ''}')">
                                 <span class="chat-time">${item.time || ''}</span>
                                 ${item.unread > 0 ? `<span class="chat-unread">${item.unread}</span>` : ''}
                             </div>
@@ -422,10 +427,10 @@ const App = {
                 <button class="chat-back-btn" onclick="App.closeChatMobile()">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
-                <div class="msg-avatar" style="background:${avatarColor}">
+                <div class="msg-avatar" style="background:${avatarColor};cursor:pointer;" onclick="App.viewProfile('${id}')">
                     ${avatarUrl ? `<img src="${avatarUrl}" alt="">` : avatarText}
                 </div>
-                <div>
+                <div style="cursor:pointer;" onclick="App.viewProfile('${id}')">
                     <div class="chat-header-name">${name}</div>
                     <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? '在线' : '离线') : '群聊'}</div>
                 </div>
@@ -644,12 +649,16 @@ const App = {
             ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${msg.fromNickname || '未知'}</div>`
             : '';
 
+        const bubbleClass = isSelf
+            ? this.getBubbleClass(this.userBubbleStyle)
+            : this.getBubbleClass(msg.fromBubbleStyle || 0);
+
         const msgHTML = `
             <div class="msg-row ${side}">
                 ${!isSelf ? avatarEl : ''}
                 <div>
                     ${nameTag}
-                    <div class="msg-bubble">${contentHTML}</div>
+                    <div class="msg-bubble ${bubbleClass}">${contentHTML}</div>
                     <div class="msg-time">${time}</div>
                 </div>
                 ${isSelf ? avatarEl : ''}
@@ -746,9 +755,9 @@ const App = {
                     const avatarHTML = f.avatarUrl ? `<img src="${f.avatarUrl}" alt="">` : f.avatarText;
                     const bgColor = f.avatarUrl ? 'transparent' : f.avatarColor;
                     return `
-                        <div class="contact-item" onclick="App.openChat('private','${f.id}','${f.nickname}','${f.avatarColor}','${f.avatarText}','${f.avatarUrl || ''}')">
-                            <div class="contact-avatar" style="background:${bgColor}">${avatarHTML}</div>
-                            <div class="contact-info">
+                        <div class="contact-item">
+                            <div class="contact-avatar" style="background:${bgColor}" onclick="event.stopPropagation();App.viewProfile('${f.id}')" title="查看主页">${avatarHTML}</div>
+                            <div class="contact-info" onclick="App.openChat('private','${f.id}','${f.nickname}','${f.avatarColor}','${f.avatarText}','${f.avatarUrl || ''}')">
                                 <div class="contact-name">${f.nickname}</div>
                                 <div class="contact-bio">${f.bio || ''}</div>
                             </div>
@@ -992,13 +1001,13 @@ const App = {
             try {
                 const groups = await this.api('/api/groups');
                 groups.forEach(g => {
-                    const isMember = false; // 已在聊天列表里显示
+                    const typeLabel = g.type === 'private' ? '🔒 私密' : '🌐 公开';
                     html += `
                         <div class="discover-user-card" onclick="App.joinGroup('${g.id}')">
                             <div class="discover-user-avatar" style="background:${g.avatarColor}">${g.avatarText}</div>
                             <div class="discover-user-info">
-                                <div class="discover-user-name">${g.name}</div>
-                                <div class="discover-user-bio">${g.description || ''} · ${g.memberCount}人</div>
+                                <div class="discover-user-name">${g.name} <span class="group-type-tag group-type-${g.type || 'public'}">${typeLabel}</span></div>
+                                <div class="discover-user-bio">${g.description || '暂无简介'} · ${g.memberCount}人</div>
                             </div>
                             <button class="btn-primary btn-sm">加入</button>
                         </div>
@@ -1063,64 +1072,6 @@ const App = {
         }
     },
 
-    async joinGroup(groupId) {
-        try {
-            await this.api('/api/groups/join', 'POST', { groupId });
-            this.toast('已加入群聊！', 'success');
-            this.renderDiscover();
-            this.renderChatList();
-        } catch (e) {
-            this.toast(e.message, 'error');
-        }
-    },
-
-    // ========== 创建群聊 ==========
-
-    async showCreateGroupModal() {
-        try {
-            const friends = await this.api('/api/friends');
-
-            const body = `
-                <div class="group-form">
-                    <input type="text" id="group-name" placeholder="群名称">
-                    <input type="text" id="group-desc" placeholder="群描述 (选填)">
-                    <p style="font-size:13px;color:var(--text-light);margin-top:8px;">选择群成员：</p>
-                    <div class="group-member-list" id="group-members">
-                        ${friends.map(f => `
-                            <div class="group-member-item" data-userid="${f.id}" onclick="this.classList.toggle('selected')">
-                                <div style="background:${f.avatarColor};width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;color:white;">${f.avatarText}</div>
-                                ${f.nickname}
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-            const footer = `
-                <button class="btn-secondary" onclick="App.closeModal()">取消</button>
-                <button class="btn-primary" id="confirm-group-btn" style="padding:10px 24px;">创建</button>
-            `;
-            this.showModal('创建群聊', body, footer);
-
-            document.getElementById('confirm-group-btn').addEventListener('click', async () => {
-                const name = document.getElementById('group-name').value.trim();
-                const desc = document.getElementById('group-desc').value.trim();
-                if (!name) { this.toast('群名称不能为空', 'error'); return; }
-
-                try {
-                    await this.api('/api/groups/create', 'POST', { name, description: desc });
-                    this.closeModal();
-                    this.renderChatList();
-                    this.renderDiscover();
-                    this.toast('群聊创建成功！', 'success');
-                } catch (e) {
-                    this.toast(e.message, 'error');
-                }
-            });
-        } catch (e) {
-            this.toast(e.message, 'error');
-        }
-    },
-
     async showGroupMembers(groupId) {
         try {
             const members = await this.api(`/api/groups/${groupId}/members`);
@@ -1167,12 +1118,13 @@ const App = {
                         <div class="admin-user-info">
                             <div class="admin-user-name">${u.nickname} (${u.username})</div>
                             <div class="admin-user-meta">${u.bio || ''}</div>
-                            <span class="admin-user-role ${u.role}">${u.role === 'admin' ? '管理员' : '普通用户'}</span>
+                            <span class="admin-user-role ${u.role}">${u.role === 'super_admin' ? '超级管理员' : u.role === 'admin' ? '管理员' : '普通用户'}</span>
                             ${u.banned ? '<span class="admin-user-banned">已封禁</span>' : ''}
+                            <span style="font-size:12px;color:var(--text-light);">积分: ${u.points || 0}</span>
                         </div>
                         <div class="admin-actions">
-                            ${u.role !== 'admin' ? `
-                                <button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="提升为管理员">⭐ 设为管理员</button>
+                            ${u.role !== 'super_admin' && u.id !== this.currentUser?.id ? `
+                                ${this.currentUser?.role === 'super_admin' && u.role !== 'admin' ? `<button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="提升为管理员">⭐ 设为管理员</button>` : ''}
                                 <button class="btn-secondary btn-sm" onclick="App.adminBanUser('${u.id}')">${u.banned ? '解封' : '封禁'}</button>
                                 <button class="btn-danger btn-sm" onclick="App.adminDeleteUser('${u.id}')">注销</button>
                                 <button class="btn-secondary btn-sm" onclick="App.adminViewChat('${u.id}')">查看聊天</button>
@@ -1424,6 +1376,424 @@ const App = {
         setTimeout(() => el.remove(), 3000);
     },
 
+    // ========== 签到 ==========
+
+    updatePointsDisplay() {
+        const el = document.getElementById('points-value');
+        if (el) el.textContent = this.userPoints;
+        // Update checkin button state
+        const btn = document.getElementById('checkin-btn');
+        if (btn && this.currentUser?.lastCheckinDate === new Date().toDateString()) {
+            btn.textContent = '已签';
+            btn.classList.add('checked');
+        }
+    },
+
+    async doCheckin() {
+        try {
+            const data = await this.api('/api/checkin', 'POST');
+            this.userPoints = data.points;
+            this.currentUser.points = data.points;
+            this.currentUser.lastCheckinDate = new Date().toDateString();
+            this.updatePointsDisplay();
+            this.toast(data.message, 'success');
+        } catch (e) {
+            if (e.message.includes('已经签到')) {
+                this.toast('今天已经签过到啦！明天再来吧~', 'info');
+            } else {
+                this.toast(e.message, 'error');
+            }
+        }
+    },
+
+    // ========== 气泡商城 ==========
+
+    async showBubbleShop() {
+        try {
+            const bubbles = await this.api('/api/bubbles');
+            const body = `
+                <div class="bubble-shop">
+                    <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
+                        选择你喜欢的气泡样式，用积分兑换后即可使用。管理员免费使用全部气泡。
+                    </p>
+                    <div class="bubble-grid">
+                        ${bubbles.map(b => {
+                            const colors = ['#fff', '#e8f5e9', '#ede7f6', '#fff3e0', '#e3f2fd'];
+                            const status = b.equipped ? `<span class="bubble-badge equipped">使用中</span>`
+                                : b.owned ? `<span class="bubble-badge owned">已拥有</span>`
+                                : '';
+                            return `
+                            <div class="bubble-item ${b.equipped ? 'equipped' : ''}">
+                                <div class="bubble-preview ${b.class}" style="background:${colors[b.id]};border:2px solid ${b.equipped ? '#667eea' : '#e0e0e0'};">
+                                    <div class="bubble-preview-msg" style="background: linear-gradient(135deg, ${this.getBubbleGradients()[b.id]});">示例消息</div>
+                                </div>
+                                <div class="bubble-info">
+                                    <div class="bubble-name">${b.name}</div>
+                                    <div class="bubble-desc">${b.desc}</div>
+                                    <div class="bubble-price">${b.price === 0 ? '免费' : '🪙 ' + b.price + ' 积分'}</div>
+                                    ${status}
+                                </div>
+                                <div class="bubble-actions">
+                                    ${b.equipped ? '' :
+                                        b.owned ?
+                                        `<button class="btn-secondary btn-sm" onclick="App.equipBubble(${b.id})">装备</button>` :
+                                        b.canAfford ?
+                                        `<button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id})">${b.price === 0 ? '装备' : '兑换'}</button>` :
+                                        `<button class="btn-secondary btn-sm" disabled>积分不足</button>`
+                                    }
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+            this.showModal('气泡商城 🎨', body, '');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    getBubbleGradients() {
+        return [
+            '#e0e0e0, #f5f5f5',            // 0: 经典白色
+            '#a8e6cf, #dcedc1',            // 1: 薄荷绿
+            '#a18cd1, #fbc2eb',            // 2: 星空紫
+            '#fa709a, #fee140',            // 3: 日落橙
+            '#667eea, #764ba2',            // 4: 极光幻彩
+        ];
+    },
+
+    async purchaseBubble(bubbleId) {
+        try {
+            const data = await this.api('/api/bubbles/purchase', 'POST', { bubbleId });
+            this.userPoints = data.points;
+            this.currentUser.points = data.points;
+            this.userBubbleStyle = data.bubbleStyle;
+            this.currentUser.bubbleStyle = data.bubbleStyle;
+            this.updatePointsDisplay();
+            this.closeModal();
+            this.toast(data.message, 'success');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async equipBubble(bubbleId) {
+        try {
+            const data = await this.api('/api/bubbles/equip', 'PUT', { bubbleId });
+            this.userBubbleStyle = data.bubbleStyle;
+            this.currentUser.bubbleStyle = data.bubbleStyle;
+            this.closeModal();
+            this.toast('气泡已装备！', 'success');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    // ========== 用户主页 ==========
+
+    showMyProfile() {
+        this.viewProfile(this.currentUser.id, true);
+    },
+
+    async viewProfile(userId, isSelf = false) {
+        this.profileUserId = userId;
+        try {
+            const user = await this.api(`/api/user/${userId}`);
+
+            // Build profile page
+            const avatarHTML = user.avatarUrl
+                ? `<img src="${user.avatarUrl}" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`
+                : `<span style="font-size:40px;color:white;">${user.avatarText}</span>`;
+            const bgColor = user.avatarUrl ? 'transparent' : user.avatarColor;
+
+            let momentsHTML = '';
+            if (user.moments && user.moments.length > 0) {
+                momentsHTML = `
+                    <div class="profile-section-title">📝 近期动态</div>
+                    <div class="profile-moments">
+                        ${user.moments.map(m => {
+                            let imgsHTML = '';
+                            if (m.images && m.images.length > 0) {
+                                imgsHTML = `<div class="moment-images">${m.images.map(img => `<img src="${img}" onclick="App.previewImage('${img}')" alt="">`).join('')}</div>`;
+                            }
+                            return `
+                                <div class="moment-card">
+                                    <div class="moment-content">${this.escapeHtml(m.content)}</div>
+                                    ${imgsHTML}
+                                    <div class="moment-time">${this.formatTime(m.createdAt)} · ${m.likes.length}赞 · ${m.comments.length}评论</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            } else {
+                momentsHTML = `<div class="profile-section-title">📝 近期动态</div><p style="color:var(--text-light);font-size:14px;text-align:center;padding:20px;">暂无动态</p>`;
+            }
+
+            const roleBadge = user.role === 'super_admin' ? 'super_admin' : user.role === 'admin' ? 'admin' : 'user';
+            const roleLabels = { super_admin: '👑 超级管理员', admin: '⭐ 管理员', user: '' };
+
+            const contentEl = document.getElementById('profile-content');
+            contentEl.innerHTML = `
+                <div class="profile-header-area">
+                    <div class="profile-big-avatar" style="background:${bgColor}">${avatarHTML}</div>
+                    ${isSelf ? `<div class="avatar-upload-area">
+                        <label class="avatar-upload-btn">
+                            📷 更换头像
+                            <input type="file" accept="image/*" id="avatar-file-input" style="display:none;" onchange="App.uploadAvatar()">
+                        </label>
+                        <span class="avatar-upload-status" id="avatar-upload-status"></span>
+                    </div>` : ''}
+                    <div class="profile-name">${user.nickname}</div>
+                    ${user.role !== 'user' ? `<div class="profile-role-badge ${roleBadge}">${roleLabels[roleBadge]}</div>` : ''}
+                    <div class="profile-bio">${user.bio || '这个人很懒，什么都没写...'}</div>
+                    <div class="profile-stats">
+                        <span>@${user.username}</span>
+                        <span>加入于 ${new Date(user.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <div style="margin-top:12px;">
+                        ${user.id !== this.currentUser?.id ?
+                            `<button class="btn-primary btn-sm" onclick="App.openChat('private','${user.id}','${user.nickname}','${user.avatarColor}','${user.avatarText}','${user.avatarUrl || ''}')">💬 发消息</button>`
+                            : ''}
+                    </div>
+                </div>
+                ${momentsHTML}
+            `;
+
+            // Switch to profile view
+            document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+            document.getElementById('view-profile').classList.remove('hidden');
+            document.querySelectorAll('.nav-item[data-view]').forEach(v => v.classList.remove('active'));
+
+        } catch (e) {
+            this.toast('加载用户信息失败: ' + e.message, 'error');
+        }
+    },
+
+    closeProfile() {
+        document.getElementById('view-profile').classList.add('hidden');
+        this.switchView('chats');
+    },
+
+    uploadAvatar() {
+        const fileInput = document.getElementById('avatar-file-input');
+        const file = fileInput.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            this.toast('图片不能超过5MB', 'error');
+            return;
+        }
+        const statusEl = document.getElementById('avatar-upload-status');
+        statusEl.textContent = '上传中...';
+        const formData = new FormData();
+        formData.append('avatar', file);
+        this.apiUpload('/api/avatar', formData).then(data => {
+            this.currentUser.avatarUrl = data.avatarUrl;
+            this.updateNavAvatar();
+            this.toast('头像已更新！', 'success');
+            statusEl.textContent = '上传成功！';
+            // Reload profile
+            this.viewProfile(this.currentUser.id, true);
+        }).catch(e => {
+            statusEl.textContent = '';
+            this.toast('上传失败: ' + e.message, 'error');
+        });
+    },
+
+    // ========== 打赏 ==========
+
+    async showDonation() {
+        document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+        document.getElementById('view-donation').classList.remove('hidden');
+        document.querySelectorAll('.nav-item[data-view]').forEach(v => v.classList.remove('active'));
+
+        try {
+            const donation = await this.api('/api/donation');
+            const contentEl = document.getElementById('donation-content');
+            const isAdmin = this.currentUser?.role === 'super_admin';
+
+            let html = '<div style="text-align:center;padding:20px;">';
+            html += '<p style="font-size:14px;color:var(--text-light);margin-bottom:20px;">如果觉得聊聊不错，欢迎请开发者喝杯咖啡 ☕</p>';
+
+            if (donation.wechat) {
+                html += `<div class="donation-qr-section">
+                    <div class="donation-qr-label">💚 微信支付</div>
+                    <img src="${donation.wechat}" class="donation-qr-img" alt="微信收款码">
+                </div>`;
+            }
+            if (donation.alipay) {
+                html += `<div class="donation-qr-section">
+                    <div class="donation-qr-label">💙 支付宝</div>
+                    <img src="${donation.alipay}" class="donation-qr-img" alt="支付宝收款码">
+                </div>`;
+            }
+            if (!donation.wechat && !donation.alipay) {
+                html += '<p style="color:var(--text-light);">管理员还没有设置收款码~</p>';
+            }
+
+            if (isAdmin) {
+                html += `<div style="margin-top:20px;">
+                    <button class="btn-primary btn-sm" onclick="App.showDonationAdmin()">📷 上传收款码</button>
+                </div>`;
+            }
+
+            html += '</div>';
+            contentEl.innerHTML = html;
+        } catch (e) {
+            document.getElementById('donation-content').innerHTML = `<p style="color:red;">${e.message}</p>`;
+        }
+    },
+
+    showDonationAdmin() {
+        const body = `
+            <div>
+                <p style="font-size:13px;color:var(--text-light);margin-bottom:16px;">
+                    上传微信和支付宝的收款码，其他用户可以在打赏页面看到。
+                </p>
+                <div class="donation-upload-row">
+                    <label class="donation-upload-btn">
+                        <span>💚 微信收款码</span>
+                        <input type="file" accept="image/*" id="wechat-qr-input" style="display:none;">
+                    </label>
+                    <span id="wechat-qr-name" style="font-size:12px;color:var(--text-light);"></span>
+                </div>
+                <div class="donation-upload-row" style="margin-top:12px;">
+                    <label class="donation-upload-btn">
+                        <span>💙 支付宝收款码</span>
+                        <input type="file" accept="image/*" id="alipay-qr-input" style="display:none;">
+                    </label>
+                    <span id="alipay-qr-name" style="font-size:12px;color:var(--text-light);"></span>
+                </div>
+            </div>
+        `;
+        const footer = `
+            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
+            <button class="btn-primary" id="upload-qr-btn">上传</button>
+        `;
+        this.showModal('上传收款码', body, footer);
+
+        let wechatFile = null, alipayFile = null;
+
+        document.getElementById('wechat-qr-input').addEventListener('change', (e) => {
+            wechatFile = e.target.files[0];
+            document.getElementById('wechat-qr-name').textContent = wechatFile ? wechatFile.name : '';
+        });
+        document.getElementById('alipay-qr-input').addEventListener('change', (e) => {
+            alipayFile = e.target.files[0];
+            document.getElementById('alipay-qr-name').textContent = alipayFile ? alipayFile.name : '';
+        });
+
+        document.getElementById('upload-qr-btn').addEventListener('click', async () => {
+            if (!wechatFile && !alipayFile) {
+                this.toast('请至少选择一张收款码', 'error');
+                return;
+            }
+            try {
+                const formData = new FormData();
+                if (wechatFile) formData.append('wechat', wechatFile);
+                if (alipayFile) formData.append('alipay', alipayFile);
+                await this.apiUpload('/api/admin/donation', formData);
+                this.closeModal();
+                this.toast('收款码上传成功！', 'success');
+                this.showDonation();
+            } catch (e) {
+                this.toast('上传失败: ' + e.message, 'error');
+            }
+        });
+    },
+
+    // ========== 创建群聊 (更新版) ==========
+
+    showCreateGroupModal() {
+        const body = `
+            <div class="group-form">
+                <input type="text" id="group-name" placeholder="群名称" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;margin-bottom:10px;">
+                <textarea id="group-desc" placeholder="群简介（选填）" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;margin-bottom:10px;resize:vertical;min-height:60px;"></textarea>
+                <div style="display:flex;gap:10px;margin-bottom:10px;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="radio" name="group-type" value="public" checked onchange="document.getElementById('group-password-section').classList.add('hidden')">
+                        <span>公开群</span>
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="radio" name="group-type" value="private" onchange="document.getElementById('group-password-section').classList.remove('hidden')">
+                        <span>私密群</span>
+                    </label>
+                </div>
+                <div id="group-password-section" class="hidden" style="margin-bottom:10px;">
+                    <input type="text" id="group-password" placeholder="入群密码" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
+                    <p style="font-size:11px;color:var(--text-light);margin-top:4px;">设置密码后，其他用户需要输入密码才能加入</p>
+                </div>
+            </div>
+        `;
+        const footer = `
+            <button class="btn-secondary" onclick="App.closeModal()">取消</button>
+            <button class="btn-primary" id="confirm-group-btn" style="padding:10px 24px;">创建</button>
+        `;
+        this.showModal('创建群聊', body, footer);
+
+        document.getElementById('confirm-group-btn').addEventListener('click', async () => {
+            const name = document.getElementById('group-name').value.trim();
+            const desc = document.getElementById('group-desc').value.trim();
+            const type = document.querySelector('input[name="group-type"]:checked').value;
+            const password = document.getElementById('group-password').value.trim();
+
+            if (!name) { this.toast('群名称不能为空', 'error'); return; }
+            if (type === 'private' && !password) { this.toast('私密群需要设置密码', 'error'); return; }
+
+            try {
+                await this.api('/api/groups/create', 'POST', { name, description: desc, type, password });
+                this.closeModal();
+                this.renderChatList();
+                this.renderDiscover();
+                this.toast('群聊创建成功！', 'success');
+            } catch (e) {
+                this.toast(e.message, 'error');
+            }
+        });
+    },
+
+    // 加入群组（更新版，支持密码输入）
+    joinGroup(groupId) {
+        // First check if group has password
+        this.api('/api/groups').then(groups => {
+            const group = groups.find(g => g.id === groupId);
+            if (group && group.hasPassword && !group.isMember) {
+                // Show password modal
+                const body = `<div>
+                    <p style="font-size:14px;margin-bottom:12px;">「${group.name}」是私密群组，需要输入密码才能加入：</p>
+                    <input type="password" id="join-password" placeholder="请输入入群密码" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
+                </div>`;
+                const footer = `
+                    <button class="btn-secondary" onclick="App.closeModal()">取消</button>
+                    <button class="btn-primary" id="join-group-btn">加入</button>
+                `;
+                this.showModal('加入私密群组', body, footer);
+
+                document.getElementById('join-group-btn').addEventListener('click', async () => {
+                    const pw = document.getElementById('join-password').value.trim();
+                    if (!pw) { this.toast('请输入密码', 'error'); return; }
+                    try {
+                        await this.api('/api/groups/join', 'POST', { groupId, password: pw });
+                        this.closeModal();
+                        this.toast('已加入群聊！', 'success');
+                        this.renderDiscover();
+                        this.renderChatList();
+                    } catch (e) {
+                        this.toast(e.message, 'error');
+                    }
+                });
+            } else {
+                // Public group or already member
+                this.api('/api/groups/join', 'POST', { groupId }).then(() => {
+                    this.toast('已加入群聊！', 'success');
+                    this.renderDiscover();
+                    this.renderChatList();
+                }).catch(e => this.toast(e.message, 'error'));
+            }
+        });
+    },
+
     // ========== 工具方法 ==========
 
     formatTime(timestamp) {
@@ -1441,6 +1811,11 @@ const App = {
 
         if (isThisYear) return `${monthDay} ${time}`;
         return `${date.getFullYear()}/${monthDay} ${time}`;
+    },
+
+    getBubbleClass(styleId) {
+        const classes = ['bubble-default', 'bubble-mint', 'bubble-purple', 'bubble-sunset', 'bubble-aurora'];
+        return classes[styleId] || 'bubble-default';
     },
 
     escapeHtml(text) {
