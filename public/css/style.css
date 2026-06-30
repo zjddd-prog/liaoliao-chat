@@ -2,6 +2,7 @@
 :root {
     --primary: #667eea;
     --primary-dark: #5a67d8;
+    --primary-light: #c3d0ff;
     --gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     --gradient-hover: linear-gradient(135deg, #5a67d8 0%, #6a3d9a 100%);
     --bg: #f0f2f5;
@@ -418,6 +419,7 @@ input, textarea { font-family: inherit; }
     display: flex;
     flex-direction: column;
     background: var(--bg);
+    position: relative;
 }
 
 .empty-state {
@@ -1950,6 +1952,39 @@ input, textarea { font-family: inherit; }
 .profile-name { font-size: 20px; font-weight: 700; color: var(--text); }
 
 .profile-moments { display: flex; flex-direction: column; gap: 10px; }
+
+/* ========== Skeleton Loading ========== */
+.loading-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px 0;
+}
+.skeleton-msg {
+    height: 40px;
+    border-radius: 16px;
+    background: linear-gradient(90deg, var(--bg) 25%, var(--bg-dark) 50%, var(--bg) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+.skeleton-msg.skeleton-other {
+    align-self: flex-start;
+    width: 60%;
+    border-bottom-left-radius: 4px;
+}
+.skeleton-msg.skeleton-self {
+    align-self: flex-end;
+    width: 50%;
+    border-bottom-right-radius: 4px;
+    background: linear-gradient(90deg, rgba(102,126,234,0.15) 25%, rgba(102,126,234,0.3) 50%, rgba(102,126,234,0.15) 75%);
+    background-size: 200% 100%;
+}
+.skeleton-msg.short { width: 35%; }
+
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
 
 /* ========== 通讯录在线点 ========== */
 
