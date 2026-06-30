@@ -204,11 +204,15 @@ input, textarea { font-family: inherit; }
 }
 
 .nav-item {
-    width: 52px;
-    height: 48px;
+    width: 70px;
+    height: auto;
+    min-height: 56px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 4px;
+    padding: 6px 0;
     border-radius: var(--radius-sm);
     color: #aaa;
     transition: var(--transition);
@@ -234,9 +238,17 @@ input, textarea { font-family: inherit; }
 .nav-label {
     font-size: 10px;
     line-height: 1;
-    display: none;
+    display: block;
 }
-/* 桌面端侧边栏底部的反馈/退出按钮 */
+.sidebar-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 0 4px;
+    margin-top: auto;
+}
 .sidebar-bottom .feedback-btn span {
     font-size: 11px;
 }
@@ -1500,14 +1512,24 @@ input, textarea { font-family: inherit; }
 /* ========== 侧边栏底部按钮 ========== */
 
 .sidebar-btn {
-    display: flex; align-items: center; gap: 6px;
-    padding: 8px 8px; border: none; border-radius: 8px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
+    padding: 8px 2px; border: none; border-radius: 8px;
     background: transparent; color: var(--text-light);
-    cursor: pointer; font-size: 12px; transition: var(--transition);
-    width: calc(100% - 8px); text-align: left;
+    cursor: pointer; font-size: 10px; transition: var(--transition);
+    width: calc(100% - 8px); text-align: center; line-height: 1;
 }
 .sidebar-btn:hover { background: var(--bg); color: var(--primary); }
-.sidebar-btn-label { font-size: 12px; }
+.sidebar-btn-label { font-size: 10px; white-space: nowrap; }
+
+.sidebar-bottom .feedback-btn {
+    display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 4px;
+    padding: 8px 2px; border: none; border-radius: 8px;
+    background: transparent; color: var(--text-light);
+    cursor: pointer; font-size: 10px; transition: var(--transition);
+    width: calc(100% - 8px); text-align: center; line-height: 1;
+}
+.sidebar-bottom .feedback-btn:hover { background: var(--bg); color: var(--primary); }
+.sidebar-bottom .feedback-btn span { font-size: 10px; }
 
 /* 手机端签到按钮 - 桌面端隐藏 */
 .checkin-mobile-btn { display: none; }
