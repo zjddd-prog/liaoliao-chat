@@ -673,10 +673,10 @@ app.delete('/api/moments/:momentId', authMiddleware, asyncHandler(async (req, re
 
 const BUBBLE_DEFS = [
     { id: 0, name: '晴空万里', desc: '清新天蓝，默认风格', price: 0, class: 'bubble-sky' },
-    { id: 1, name: '云霄巡航', desc: '云朵与飞机点缀', price: 30, class: 'bubble-cloud' },
-    { id: 2, name: '落日飞行', desc: '温暖的落日余晖', price: 60, class: 'bubble-sunset' },
-    { id: 3, name: '星辰航线', desc: '深邃星空与星光', price: 120, class: 'bubble-stars' },
-    { id: 4, name: '王牌机长', desc: '金色机翼，荣耀之巅', price: 180, class: 'bubble-captain' }
+    { id: 1, name: '云霄巡航', desc: '云朵与飞机点缀', price: 20, class: 'bubble-cloud' },
+    { id: 2, name: '落日飞行', desc: '温暖的落日余晖', price: 40, class: 'bubble-sunset' },
+    { id: 3, name: '星辰航线', desc: '深邃星空与星光', price: 60, class: 'bubble-stars' },
+    { id: 4, name: '王牌机长', desc: '金色机翼，荣耀之巅', price: 80, class: 'bubble-captain' }
 ];
 
 function getTodayString() {
@@ -784,11 +784,11 @@ app.put('/api/bubbles/equip', authMiddleware, asyncHandler(async (req, res) => {
 
 const FRAME_DEFS = [
     { id: 0, name: '默认边框', price: 0, owned: true, desc: '系统默认' },
-    { id: 1, name: '云端起点', price: 100, icon: '☁️', desc: '蓝天白云，飞行梦想的第一步', color: '#87CEEB' },
-    { id: 2, name: '升空之旅', price: 300, icon: '✈️', desc: '收起起落架，冲向蓝天', color: '#4A90D9' },
-    { id: 3, name: '云海巡航', price: 800, icon: '🌤️', desc: '巡航万米高空，俯瞰云海', color: '#E8F0FE' },
-    { id: 4, name: '金色航线', price: 1500, icon: '✨', desc: '穿越金色航线，荣耀飞行', color: 'linear-gradient(45deg, #FFD700, #FFA500)' },
-    { id: 5, name: '机长之翼', price: 3000, icon: '👨‍✈️', desc: '机长专属，王者之翼', color: 'linear-gradient(135deg, #FFD700, #FF6B35, #FFD700)' },
+    { id: 1, name: '云端起点', price: 30, icon: '☁️', desc: '蓝天白云，飞行梦想的第一步', color: '#87CEEB' },
+    { id: 2, name: '升空之旅', price: 50, icon: '✈️', desc: '收起起落架，冲向蓝天', color: '#4A90D9' },
+    { id: 3, name: '云海巡航', price: 70, icon: '🌤️', desc: '巡航万米高空，俯瞰云海', color: '#E8F0FE' },
+    { id: 4, name: '金色航线', price: 90, icon: '✨', desc: '穿越金色航线，荣耀飞行', color: 'linear-gradient(45deg, #FFD700, #FFA500)' },
+    { id: 5, name: '机长之翼', price: 100, icon: '👨‍✈️', desc: '机长专属，王者之翼', color: 'linear-gradient(135deg, #FFD700, #FF6B35, #FFD700)' },
 ];
 
 app.get('/api/avatar-frames', authMiddleware, asyncHandler(async (req, res) => {

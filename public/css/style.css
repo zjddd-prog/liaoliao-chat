@@ -2627,3 +2627,35 @@ a, button, div, span, p {
     .frame-shop-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }
 
+/* 装饰商城 Tabs */
+.deco-shop { padding: 0; }
+.deco-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 2;
+    padding: 4px 0;
+}
+.deco-tab {
+    flex: 1;
+    padding: 8px 12px;
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    cursor: pointer;
+    font-size: 14px;
+    text-align: center;
+    transition: var(--transition);
+    font-weight: 500;
+}
+.deco-tab:hover { border-color: var(--primary); background: rgba(102,126,234,0.05); }
+.deco-tab.active {
+    border-color: var(--primary);
+    background: rgba(102,126,234,0.08);
+    color: var(--primary);
+    font-weight: 600;
+}
+

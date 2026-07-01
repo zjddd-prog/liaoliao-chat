@@ -79,20 +79,6 @@ const App = {
             }
         });
 
-        // 通讯录事件委托——点击联系人直接打开聊天
-        document.getElementById('contacts-list')?.addEventListener('click', (e) => {
-            const contactItem = e.target.closest('.contact-item');
-            if (!contactItem) return;
-            // 只跳过举报按钮
-            if (e.target.closest('.contact-report-btn')) return;
-            const type = contactItem.dataset.chatType;
-            const id = contactItem.dataset.chatId;
-            const name = contactItem.dataset.chatName;
-            if (type && id && name) {
-                this.openChat(type, id, name);
-            }
-        });
-
         // 发现页事件委托——好友卡片点击直接打开聊天
         document.getElementById('discover-content')?.addEventListener('click', (e) => {
             const card = e.target.closest('.discover-user-card');
@@ -1440,6 +1426,19 @@ const App = {
                     `;
                 }).join('');
 
+            // 直接绑定点击——每个 contact-item 打开聊天
+            listEl.querySelectorAll('.contact-item').forEach(item => {
+                item.style.cursor = 'pointer';
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('.contact-report-btn')) return;
+                    const type = item.dataset.chatType;
+                    const id = item.dataset.chatId;
+                    const name = item.dataset.chatName;
+                    if (type && id && name) {
+                        this.openChat(type, id, name);
+                    }
+                });
+            });
         } catch (e) {
             console.error('Failed to render contacts:', e);
         }
@@ -2423,6 +2422,7 @@ const App = {
             this.currentUser.bubbleStyle = data.bubbleStyle;
             this.updatePointsDisplay();
             this.closeModal();
+            this.showDecorations();
             this.toast(data.message, 'success');
         } catch (e) {
             this.toast(e.message, 'error');
@@ -2435,6 +2435,7 @@ const App = {
             this.userBubbleStyle = data.bubbleStyle;
             this.currentUser.bubbleStyle = data.bubbleStyle;
             this.closeModal();
+            this.showDecorations();
             this.toast(t('toast.bubbleEquipped'), 'success');
         } catch (e) {
             this.toast(e.message, 'error');
@@ -2492,7 +2493,7 @@ const App = {
             this.currentUser.avatarFrame = data.avatarFrame;
             this.updatePointsDisplay();
             this.closeModal();
-            this.showFrameShop();
+            this.showDecorations();
             this.toast(data.message, 'success');
         } catch (e) {
             this.toast(e.message, 'error');
@@ -2504,10 +2505,133 @@ const App = {
             const data = await this.api('/api/avatar-frames/equip', 'PUT', { frameId });
             this.currentUser.avatarFrame = data.avatarFrame;
             this.closeModal();
-            this.showFrameShop();
+            this.showDecorations();
             this.toast('头像框已装备', 'success');
         } catch (e) {
             this.toast(e.message, 'error');
+        }
+    },
+
+    // ========== 装饰商城（气泡+头像框）==========
+    _decorationTab: 'bubbles',
+    _decoBubbles: null,
+    _decoFrames: null,
+    _decoPoints: 0,
+
+    async showDecorations() {
+        try {
+            const [bubbles, frameData] = await Promise.all([
+                this.api('/api/bubbles'),
+                this.api('/api/avatar-frames')
+            ]);
+            this._decoBubbles = bubbles;
+            this._decoFrames = frameData;
+            this._decoPoints = frameData.points || 0;
+            this._renderDecoModal();
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    _renderDecoModal() {
+        const tab = this._decorationTab;
+        const points = this._decoPoints;
+        const bubbles = this._decoBubbles;
+        const frameData = this._decoFrames;
+        const body = `
+            <div class="deco-shop">
+                <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
+                    🪙 当前积分：<b>${points}</b> | 装扮你的聊天体验！
+                </p>
+                <div class="deco-tabs">
+                    <button class="deco-tab ${tab === 'bubbles' ? 'active' : ''}" data-tab="bubbles">💬 气泡样式</button>
+                    <button class="deco-tab ${tab === 'frames' ? 'active' : ''}" data-tab="frames">🖼️ 头像框</button>
+                </div>
+                <div id="deco-content">${this._renderDecoContent(tab)}</div>
+            </div>`;
+        this.showModal('🎨 装饰商城', body, '');
+        // 绑定 Tab 点击
+        document.querySelectorAll('.deco-tab').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const t = btn.dataset.tab;
+                if (!t) return;
+                this._decorationTab = t;
+                document.querySelectorAll('.deco-tab').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const content = document.getElementById('deco-content');
+                if (content) content.innerHTML = this._renderDecoContent(t);
+            });
+        });
+    },
+
+    _renderDecoContent(tab) {
+        if (tab === 'bubbles') {
+            const bubbles = this._decoBubbles;
+            if (!bubbles) return '<div style="padding:20px;color:var(--text-light);">加载中...</div>';
+            const colors = ['#e3f2fd', '#b3e5fc', '#ffccbc', '#1a237e', '#fff8e1'];
+            const iconMap = ['☁️', '✈️', '🌅', '🌟', '👑️'];
+            return `<div class="bubble-grid">${bubbles.map(b => {
+                const dayPrice = Math.max(1, Math.floor(b.price * 0.3));
+                const statusHTML = b.equipped ? '<span class="bubble-badge equipped">使用中</span>'
+                    : (b.owned && b.isDay) ? '<span class="bubble-badge day">当日</span>'
+                    : (b.owned && !b.isDay) ? '<span class="bubble-badge owned">已拥有</span>'
+                    : '';
+                return `
+                    <div class="bubble-item ${b.equipped ? 'equipped' : ''} ${b.class || ''}">
+                        <div class="bubble-preview" style="background:${colors[b.id]};">
+                            <div class="bubble-preview-icon">${iconMap[b.id]}</div>
+                            <div class="bubble-preview-msg" style="background:linear-gradient(135deg, ${this.getBubbleGradients()[b.id]});">${b.name}</div>
+                        </div>
+                        <div class="bubble-info">
+                            <div class="bubble-name">${b.name}</div>
+                            <div class="bubble-desc">${b.desc}</div>
+                            <div class="bubble-price-row">
+                                <span class="bubble-price ${b.price === 0 ? 'free' : ''}">${b.price === 0 ? '免费' : '永久 🪙' + b.price}</span>
+                                ${b.price > 0 ? `<span class="bubble-price-day">1天 🪙${dayPrice}</span>` : ''}
+                            </div>
+                            ${statusHTML}
+                        </div>
+                        <div class="bubble-actions">
+                            ${b.equipped ? '<button class="btn-secondary btn-sm" disabled>使用中</button>' :
+                                b.owned ?
+                                '<button class="btn-primary btn-sm" onclick="App.equipBubble(' + b.id + ')">装备</button>' :
+                              b.price === 0 ?
+                              '<button class="btn-primary btn-sm" onclick="App.equipBubble(0)">使用默认</button>' :
+                              b.canAfford ?
+                                `<div style="display:flex;flex-direction:column;gap:4px;">
+                                    <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'day')">1天 ${dayPrice}🪙</button>
+                                    <button class="btn-primary btn-sm" onclick="App.purchaseBubble(${b.id},'permanent')">永久 ${b.price}🪙</button>
+                                </div>` :
+                              '<button class="btn-secondary btn-sm" disabled>积分不足</button>'
+                            }
+                        </div>
+                    </div>`;
+            }).join('')}</div>`;
+        } else {
+            const frameData = this._decoFrames;
+            if (!frameData) return '<div style="padding:20px;color:var(--text-light);">加载中...</div>';
+            return `<div class="frame-shop-grid">${frameData.frames.map(f => {
+                const badgeHTML = f.equipped ? '<span class="frame-badge equipped-badge">使用中</span>'
+                    : f.owned ? '<span class="frame-badge owned">已拥有</span>'
+                    : f.price > 0 ? '<span class="frame-badge locked">🔒</span>'
+                    : '';
+                const actionHTML = f.equipped ? '<button class="btn-secondary btn-sm" disabled>使用中</button>'
+                    : f.owned ? '<button class="btn-primary btn-sm" onclick="App.equipFrame(' + f.id + ')">装备</button>'
+                    : f.price === 0 ? '<button class="btn-primary btn-sm" onclick="App.equipFrame(0)">使用默认</button>'
+                    : `<button class="btn-primary btn-sm" onclick="App.purchaseFrame(${f.id})" ${(frameData.points || 0) < f.price ? 'disabled' : ''}>🪙${f.price} 兑换</button>`;
+                return `
+                    <div class="frame-card ${f.equipped ? 'equipped' : ''}">
+                        ${badgeHTML}
+                        <div class="frame-preview avatar-frame-${f.id}">
+                            <span style="font-size:20px;">${f.icon || '👤'}</span>
+                            <div class="avatar-frame-ring"></div>
+                        </div>
+                        <div class="frame-name">${f.name}</div>
+                        <div class="frame-desc">${f.desc}</div>
+                        <div class="frame-price">${f.price > 0 ? '🪙' + f.price : '免费'}</div>
+                        <div style="margin-top:6px;">${actionHTML}</div>
+                    </div>`;
+            }).join('')}</div>`;
         }
     },
 
@@ -2669,13 +2793,9 @@ const App = {
                             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
                             <span>${t('nav.checkin')}</span>
                         </button>
-                        <button class="profile-quick-btn" onclick="App.showBubbleShop()">
-                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                            <span>${t('nav.bubble')}</span>
-                        </button>
-                        <button class="profile-quick-btn" onclick="App.showFrameShop()">
-                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                            <span>头像框</span>
+                        <button class="profile-quick-btn" onclick="App.showDecorations()">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                            <span>装饰</span>
                         </button>
                         <button class="profile-quick-btn" onclick="App.showDonation()">
                             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
