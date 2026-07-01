@@ -2003,6 +2003,7 @@ const App = {
                         <div class="admin-actions">
                             ${u.role !== 'super_admin' && u.id !== this.currentUser?.id ? `
                                 ${this.currentUser?.role === 'super_admin' && u.role !== 'admin' ? `<button class="admin-promote-btn" onclick="App.adminPromoteUser('${u.id}')" title="${t('admin.promote') || '提升为管理员'}">⭐ ${t('admin.setAdmin') || '设为管理员'}</button>` : ''}
+                                ${this.currentUser?.role === 'super_admin' && u.role === 'admin' ? `<button class="admin-demote-btn" onclick="App.adminDemoteUser('${u.id}')" title="${t('admin.demote') || '取消管理员'}">⬇ ${t('admin.removeAdmin') || '取消管理员'}</button>` : ''}
                                 <button class="btn-secondary btn-sm" onclick="App.adminBanUser('${u.id}')">${u.banned ? (t('admin.unban') || '解封') : (t('admin.ban') || '封禁')}</button>
                                 <button class="btn-danger btn-sm" onclick="App.adminDeleteUser('${u.id}')">${t('admin.delete') || '注销'}</button>
                                 ${isMuted ?
@@ -2214,6 +2215,17 @@ const App = {
         if (!confirm('确定要将该用户提升为管理员吗？')) return;
         try {
             const data = await this.api(`/api/admin/promote/${userId}`, 'POST');
+            this.toast(data.message, 'success');
+            this.renderAdminTab('admin-users');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async adminDemoteUser(userId) {
+        if (!confirm(t('admin.demoteConfirm') || '确定要取消该用户的管理员权限吗？')) return;
+        try {
+            const data = await this.api(`/api/admin/demote/${userId}`, 'POST');
             this.toast(data.message, 'success');
             this.renderAdminTab('admin-users');
         } catch (e) {

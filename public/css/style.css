@@ -1915,6 +1915,20 @@ a, button, div, span, p {
 }
 .admin-promote-btn:hover { background: #ffc107; transform: scale(1.03); }
 
+/* 取消管理员按钮 */
+.admin-demote-btn {
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: #ff6b6b;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: var(--transition);
+}
+.admin-demote-btn:hover { background: #e55050; transform: scale(1.03); }
+
 /* ========== 侧边栏积分区 ========== */
 
 .sidebar-points {

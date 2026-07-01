@@ -1096,6 +1096,18 @@ app.post('/api/admin/promote/:userId', adminMiddleware, asyncHandler(async (req,
     res.json({ success: true, message: '已提升为管理员', role: 'admin' });
 }));
 
+// 取消管理员（仅超级管理员可操作）
+app.post('/api/admin/demote/:userId', adminMiddleware, asyncHandler(async (req, res) => {
+    if (req.user.role !== 'super_admin') return res.status(403).json({ error: '仅超级管理员可取消管理员' });
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    if (result.rows[0].role !== 'admin') {
+        return res.status(400).json({ error: '该用户不是管理员' });
+    }
+    await pool.query("UPDATE users SET role = 'user' WHERE id = $1", [req.params.userId]);
+    res.json({ success: true, message: '已取消管理员', role: 'user' });
+}));
+
 app.post('/api/admin/mute/:userId', adminMiddleware, asyncHandler(async (req, res) => {
     const { duration } = req.body;
     const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
