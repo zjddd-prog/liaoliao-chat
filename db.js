@@ -51,8 +51,13 @@ async function initTables() {
         message_type TEXT DEFAULT 'text',
         created_at BIGINT NOT NULL,
         is_read BOOLEAN DEFAULT false,
-        read_by JSONB DEFAULT '[]'
+        read_by JSONB DEFAULT '[]',
+        from_bubble_style INTEGER DEFAULT 0
       )
+    `);
+
+    await client.query(`
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS from_bubble_style INTEGER DEFAULT 0;
     `);
 
     await client.query(`
