@@ -37,6 +37,7 @@ async function initTables() {
         bubble_purchases JSONB DEFAULT '{}',
         blocked_users JSONB DEFAULT '[]',
         banned BOOLEAN DEFAULT false,
+        avatar_frame INTEGER DEFAULT 0,
         created_at BIGINT NOT NULL
       )
     `);
