@@ -43,8 +43,10 @@ const upload = multer({
 // ========== Auth Middleware (async) ==========
 
 async function authMiddleware(req, res, next) {
-    const token = req.headers.authorization;
-    if (!token) return res.status(401).json({ error: '未登录' });
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: '未登录' });
+    // 支持 "Bearer <token>" 或直接从登录返回的 token 字符串
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
     try {
         const result = await pool.query('SELECT * FROM users WHERE id = $1', [token]);
         if (result.rows.length === 0) return res.status(401).json({ error: '无效token' });
