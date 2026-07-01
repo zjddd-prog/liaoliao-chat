@@ -83,23 +83,6 @@ const App = {
         document.getElementById('contacts-list')?.addEventListener('click', (e) => {
             const contactItem = e.target.closest('.contact-item');
             if (!contactItem) return;
-            const type = contactItem.dataset.chatType;
-            const id = contactItem.dataset.chatId;
-            const name = contactItem.dataset.chatName;
-            if (type && id && name) {
-                this.openChat(type, id, name);
-            }
-        });
-
-        // 通讯录搜索
-        document.getElementById('contact-search')?.addEventListener('input', e => {
-            this.renderContacts(e.target.value.toLowerCase());
-        });
-
-        // 通讯录列表事件委托——点击联系人直接打开聊天
-        document.getElementById('contacts-list')?.addEventListener('click', (e) => {
-            const contactItem = e.target.closest('.contact-item');
-            if (!contactItem) return;
             // 只跳过举报按钮
             if (e.target.closest('.contact-report-btn')) return;
             const type = contactItem.dataset.chatType;
@@ -841,10 +824,15 @@ const App = {
     // ========== 打开聊天 ==========
 
     async openChat(type, id, name) {
-        this.currentChatType = type;
-        this.currentChatId = id;
-        this.currentChatName = name;
-        this._unreadBelow = 0;
+        // 防止快速重复点击导致重复加载/消息重复
+        if (this._openingChat) return;
+        this._openingChat = true;
+        try {
+            this.currentChatType = type;
+            this.currentChatId = id;
+            this.currentChatName = name;
+            this._unreadBelow = 0;
+            this._renderedMsgIds = new Set();
 
         const isMobile = window.innerWidth <= 1024;
 
@@ -975,6 +963,9 @@ const App = {
             const chatInput = document.getElementById('chat-input');
             if (chatInput && !isMobile) chatInput.focus();
         }, 100);
+        } finally {
+            this._openingChat = false;
+        }
     },
 
     // iOS键盘适配：监听visualViewport变化，调整消息区域滚动和输入区位置
@@ -1273,6 +1264,13 @@ const App = {
     appendMessage(msg, side) {
         const area = document.getElementById('messages-area');
         if (!area) return;
+
+        // 消息去重：同一条消息只渲染一次
+        if (msg.id) {
+            if (!this._renderedMsgIds) this._renderedMsgIds = new Set();
+            if (this._renderedMsgIds.has(msg.id)) return;
+            this._renderedMsgIds.add(msg.id);
+        }
 
         const isSelf = side === 'self';
 
@@ -2631,7 +2629,7 @@ const App = {
                     <div class="profile-avatar-colors">
                         <span class="profile-color-label">头像颜色:</span>
                         ${['#667eea','#764ba2','#f093fb','#f5576c','#4facfe','#00f2fe','#43e97b','#fa709a','#fee140','#303030'].map(c => `
-                            <button class="profile-color-btn ${c === avatarBg && !user.avatarUrl ? 'active' : ''}" style="background:${c}" onclick="App.updateAvatarColor('${c}')"></button>
+                            <button class="profile-color-btn ${c === user.avatarColor && !user.avatarUrl ? 'active' : ''}" style="background:${c}" onclick="App.updateAvatarColor('${c}')"></button>
                         `).join('')}
                     </div>
                 </div>
