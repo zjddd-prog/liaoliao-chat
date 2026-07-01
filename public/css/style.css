@@ -2508,3 +2508,122 @@ a, button, div, span, p {
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
+/* ========== 头像框样式 ========== */
+.avatar-wrapper {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+}
+.avatar-frame-ring {
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 2;
+}
+/* 默认无框 */
+.avatar-frame-0 .avatar-frame-ring { display: none; }
+/* 1-云端起点：浅蓝"起步"边框 */
+.avatar-frame-1 .avatar-frame-ring {
+    border: 3px solid #87CEEB;
+    box-shadow: 0 0 8px rgba(135,206,235,0.4);
+    inset: -3px;
+}
+/* 2-升空之旅：渐变蓝+动画 */
+.avatar-frame-2 .avatar-frame-ring {
+    border: 3px solid;
+    border-image: linear-gradient(135deg, #4A90D9, #63B8FF) 1;
+    box-shadow: 0 0 12px rgba(74,144,217,0.5);
+    inset: -3px;
+}
+/* 3-云海巡航：白色边框+云纹 */
+.avatar-frame-3 .avatar-frame-ring {
+    border: 3px solid #E8F0FE;
+    box-shadow: 0 0 14px rgba(232,240,254,0.6), 0 0 30px rgba(135,206,235,0.3);
+    inset: -4px;
+}
+/* 4-金色航线 */
+.avatar-frame-4 .avatar-frame-ring {
+    border: 3px solid;
+    border-image: linear-gradient(45deg, #FFD700, #FFA500, #FFD700) 1;
+    box-shadow: 0 0 14px rgba(255,215,0,0.5), 0 0 28px rgba(255,165,0,0.3);
+    inset: -4px;
+}
+/* 5-机长之翼：金色+闪烁 */
+.avatar-frame-5 .avatar-frame-ring {
+    border: 3px solid;
+    border-image: linear-gradient(135deg, #FFD700, #FF6B35, #FFD700) 1;
+    box-shadow: 0 0 16px rgba(255,215,0,0.6), 0 0 32px rgba(255,107,53,0.4);
+    inset: -4px;
+    animation: frame-glow 2s ease-in-out infinite alternate;
+}
+@keyframes frame-glow {
+    0% { box-shadow: 0 0 12px rgba(255,215,0,0.4), 0 0 24px rgba(255,107,53,0.2); }
+    100% { box-shadow: 0 0 20px rgba(255,215,0,0.7), 0 0 40px rgba(255,107,53,0.4); }
+}
+/* 小头像（聊天列表）的头像框微调 */
+.chat-avatar.avatar-frame-1 .avatar-frame-ring,
+.chat-avatar.avatar-frame-2 .avatar-frame-ring,
+.contact-avatar.avatar-frame-1 .avatar-frame-ring,
+.contact-avatar.avatar-frame-2 .avatar-frame-ring,
+.msg-avatar.avatar-frame-1 .avatar-frame-ring,
+.msg-avatar.avatar-frame-2 .avatar-frame-ring { inset: -2px; border-width: 2px; }
+.chat-avatar.avatar-frame-3 .avatar-frame-ring,
+.chat-avatar.avatar-frame-4 .avatar-frame-ring,
+.chat-avatar.avatar-frame-5 .avatar-frame-ring,
+.contact-avatar.avatar-frame-3 .avatar-frame-ring,
+.contact-avatar.avatar-frame-4 .avatar-frame-ring,
+.contact-avatar.avatar-frame-5 .avatar-frame-ring,
+.msg-avatar.avatar-frame-3 .avatar-frame-ring,
+.msg-avatar.avatar-frame-4 .avatar-frame-ring,
+.msg-avatar.avatar-frame-5 .avatar-frame-ring { inset: -2px; border-width: 2px; }
+
+/* 头像框商城 */
+.frame-shop-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+.frame-card {
+    background: var(--bg);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--transition);
+    position: relative;
+}
+.frame-card:hover { border-color: var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+.frame-card.equipped { border-color: var(--primary); background: rgba(102,126,234,0.05); }
+.frame-card .frame-preview {
+    width: 56px; height: 56px;
+    margin: 0 auto 10px;
+    border-radius: 50%;
+    background: #667eea;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 22px;
+    font-weight: 700;
+    position: relative;
+}
+.frame-card .frame-name { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.frame-card .frame-desc { font-size: 12px; color: var(--text-light); margin-bottom: 8px; }
+.frame-card .frame-price { font-size: 13px; font-weight: 600; color: var(--primary); }
+.frame-card .frame-badge {
+    position: absolute; top: 8px; right: 8px;
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    font-weight: 600;
+}
+.frame-card .frame-badge.owned { background: #e8f5e9; color: #388e3c; }
+.frame-card .frame-badge.equipped-badge { background: #e3f2fd; color: #1565c0; }
+.frame-card .frame-badge.locked { background: #f5f5f5; color: #999; }
+
+/* 移动端头像框商城 */
+@media (max-width: 768px) {
+    .frame-shop-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+
