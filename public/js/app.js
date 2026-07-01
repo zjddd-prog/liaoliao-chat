@@ -1307,10 +1307,6 @@ const App = {
         }
 
         // 群聊中显示发送者名字
-        const nameTag = (!isSelf && this.currentChatType === 'group')
-            ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${msg.fromNickname || '?'}</div>`
-            : '';
-
         // 对方消息显示头像（可点击进入个人主页）
         const fromUserId = this.escapeAttr(msg.from || '');
         const avatarOnly = !isSelf
@@ -1325,14 +1321,11 @@ const App = {
             : this.getBubbleClass(msg.fromBubbleStyle || 0);
 
         // 群聊中发送者名字也可点击进入主页
-        const nameTagClickable = (!isSelf && this.currentChatType === 'group' && fromUserId)
-            ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${fromUserId}')" title="查看主页">${this.escapeHtml(msg.fromNickname || '?')}</div>`
+        const nameTag = (!isSelf && this.currentChatType === 'group')
+            ? (fromUserId
+                ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${fromUserId}')" title="查看主页">${this.escapeHtml(msg.fromNickname || '?')}</div>`
+                : `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${this.escapeHtml(msg.fromNickname || '?')}</div>`)
             : '';
-
-        const nameTag = nameTagClickable
-            || (!isSelf && this.currentChatType === 'group'
-                ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${this.escapeHtml(msg.fromNickname || '?')}</div>`
-                : '');
 
         const msgHTML = `
             <div class="msg-row ${side}">
