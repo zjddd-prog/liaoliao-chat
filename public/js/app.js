@@ -909,9 +909,21 @@ const App = {
 
         // 移动端：立即显示聊天面板（不等消息加载完）
         if (isMobile) {
+            // 先确保 view-chats 可见（从通讯录/发现等视图切入时需要）
+            const viewChats = document.getElementById('view-chats');
+            if (viewChats) viewChats.classList.remove('hidden');
+            // 隐藏其他 view
+            ['view-contacts', 'view-discover', 'view-moments', 'view-admin'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('hidden');
+            });
             const listPanel = document.querySelector('.list-panel');
             if (listPanel) listPanel.classList.add('hidden');
             detailPanel.classList.remove('hidden');
+            // 更新导航高亮
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('nav-chats')?.classList.add('active');
+            this.currentView = 'chats';
         }
 
         // 高亮聊天列表当前项（桌面端需要更新；移动端列表已隐藏，仅标记active状态）
@@ -1104,10 +1116,20 @@ const App = {
 
     // 手机端关闭聊天，返回聊天列表
     closeChatMobile() {
+        const viewChats = document.getElementById('view-chats');
+        if (viewChats) viewChats.classList.remove('hidden');
+        ['view-contacts', 'view-discover', 'view-moments', 'view-admin'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
         const detail = document.getElementById('chat-detail');
         const listPanel = document.querySelector('.list-panel');
         if (listPanel) listPanel.classList.remove('hidden');
         if (detail) detail.classList.add('hidden');
+        // 更新导航高亮
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+        document.getElementById('nav-chats')?.classList.add('active');
+        this.currentView = 'chats';
         // 重置聊天状态
         this.currentChatId = null;
         this.currentChatType = null;
@@ -1681,17 +1703,22 @@ const App = {
             try {
                 const groups = await this.api('/api/groups/discover');
                 groups.forEach(g => {
+                    const gid = this.escapeAttr(g.id);
+                    const gname = this.escapeAttr(g.name);
                     let btnHTML;
                     if (g.isMember) {
-                        btnHTML = `<button class="btn-secondary btn-sm" onclick="event.stopPropagation();App.openChat('group','${g.id}','${this.escapeAttr(g.name)}')">${t('discover.chat') || '进入'}</button>`;
+                        btnHTML = `<button class="btn-secondary btn-sm" onclick="event.stopPropagation();App.openChat('group','${gid}','${gname}')">${t('discover.chat') || '进入'}</button>`;
                     } else if (g.type === 'private') {
-                        btnHTML = `<button class="btn-primary btn-sm">🔒 ${t('group.join') || '加入'}</button>`;
+                        btnHTML = `<button class="btn-primary btn-sm" onclick="event.stopPropagation();App.joinGroup('${gid}')">🔒 ${t('group.join') || '加入'}</button>`;
                     } else {
-                        btnHTML = `<button class="btn-primary btn-sm">${t('group.join') || '加入'}</button>`;
+                        btnHTML = `<button class="btn-primary btn-sm" onclick="event.stopPropagation();App.joinGroup('${gid}')">${t('group.join') || '加入'}</button>`;
                     }
                     const typeLabel = g.type === 'private' ? `🔒 ${t('discover.privateGroup') || '私密'}` : `🌐 ${t('discover.publicGroup') || '公开'}`;
+                    const cardAction = g.isMember
+                        ? `App.openChat('group','${gid}','${gname}')`
+                        : `App.joinGroup('${gid}')`;
                     html += `
-                        <div class="discover-user-card" onclick="App.joinGroup('${g.id}')">
+                        <div class="discover-user-card" style="cursor:pointer;" onclick="${cardAction}">
                             <div class="discover-user-info">
                                 <div class="discover-user-name">${this.escapeHtml(g.name)} <span class="group-type-tag group-type-${g.type || 'public'}">${typeLabel}</span></div>
                                 <div class="discover-user-bio">${this.escapeHtml(g.description || '暂无简介')} · ${g.memberCount}人${g.isMember ? ' · ✅ 已加入' : ''}</div>
@@ -1713,13 +1740,14 @@ const App = {
                 html += `<div class="discover-section-title" style="margin-top:20px;">👥 ${t('discover.myFriends') || '我的好友'} (${friends.length})</div>`;
                 friends.forEach(u => {
                     const escId = this.escapeAttr(u.id);
+                    const escName = this.escapeAttr(u.nickname);
                     html += `
-                        <div class="discover-user-card" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(u.nickname)}">
-                            <div class="discover-user-info" style="cursor:pointer;">
+                        <div class="discover-user-card" style="cursor:pointer;" onclick="App.openChat('private','${escId}','${escName}')">
+                            <div class="discover-user-info">
                                 <div class="discover-user-name">${this.escapeHtml(u.nickname)}</div>
                                 <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
                             </div>
-                            <button class="btn-secondary btn-sm">${t('discover.chat')}</button>
+                            <button class="btn-secondary btn-sm" onclick="event.stopPropagation();App.openChat('private','${escId}','${escName}')">${t('discover.chat') || '聊天'}</button>
                         </div>
                     `;
                 });
