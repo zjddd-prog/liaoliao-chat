@@ -21,6 +21,10 @@ const App = {
     // ========== 初始化 ==========
 
     init() {
+        // 隐藏加载骨架屏
+        const skeleton = document.getElementById('app-skeleton');
+        if (skeleton) { skeleton.style.opacity = '0'; skeleton.style.transition = 'opacity 0.3s'; setTimeout(() => skeleton.remove(), 350); }
+
         // 检查登录状态
         this.token = localStorage.getItem('chat_token');
         if (this.token) {

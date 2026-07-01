@@ -13,11 +13,28 @@
     <meta name="apple-mobile-web-app-title" content="飞友之家">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     
-    <link rel="stylesheet" href="/css/style.css?v=326">
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/i18n.js?v=326"></script>
+    <link rel="stylesheet" href="/css/style.css?v=327">
+    <!-- 预加载关键资源 -->
+    <link rel="preload" href="/socket.io/socket.io.js" as="script">
+    <link rel="preload" href="/js/i18n.js?v=327" as="script">
+    <link rel="preload" href="/js/app.js?v=327" as="script">
 </head>
 <body>
+    <!-- 骨架屏：无需 JS，立即显示 -->
+    <div id="app-skeleton" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;background:linear-gradient(135deg,#e8f0fe,#d4e4fc);display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;">
+        <div style="width:80px;height:80px;border-radius:20px;background:linear-gradient(135deg,#4285f4,#34a853);display:flex;align-items:center;justify-content:center;font-size:40px;box-shadow:0 8px 32px rgba(66,133,244,.3);margin-bottom:24px;">💬</div>
+        <div style="font-size:24px;font-weight:700;color:#333;margin-bottom:8px;">飞友之家</div>
+        <div style="font-size:14px;color:#888;margin-bottom:32px;">正在加载中...</div>
+        <div style="width:200px;height:4px;background:#d4e4fc;border-radius:2px;overflow:hidden;">
+            <div style="width:40%;height:100%;background:linear-gradient(90deg,#4285f4,#34a853);border-radius:2px;animation:skeleton-load 1.2s ease-in-out infinite;"></div>
+        </div>
+        <style>
+            @keyframes skeleton-load {
+                0% { transform: translateX(-100%); }
+                100% { transform: translateX(350%); }
+            }
+        </style>
+    </div>
     <!-- ============ 登录/注册页 ============ -->
     <div class="auth-page" id="auth-page">
         <div class="auth-bubbles">
@@ -237,6 +254,8 @@
     <div class="toast-container" id="toast-container"></div>
     <div class="image-preview-overlay hidden" id="image-preview-overlay" onclick="this.classList.add('hidden')"><img id="image-preview-img" src="" alt=""></div>
 
-    <script src="/js/app.js?v=326"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/i18n.js?v=327"></script>
+    <script src="/js/app.js?v=327"></script>
 </body>
 </html>
