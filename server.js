@@ -502,10 +502,10 @@ app.get('/api/chat-list', authMiddleware, asyncHandler(async (req, res) => {
             FROM messages
             WHERE type = 'group'
               AND target_id = g.id
-              AND sender_id != $1
-              AND (read_by IS NULL OR NOT read_by @> $2::jsonb)
+              AND sender_id != $2
+              AND (read_by IS NULL OR NOT read_by @> $3::jsonb)
         ) unread ON true
-    `, [JSON.stringify([userId]), JSON.stringify([userId])]);
+    `, [JSON.stringify([userId]), userId, JSON.stringify([userId])]);
 
     const groups = groupsResult.rows.map(g => ({
         id: g.id,
