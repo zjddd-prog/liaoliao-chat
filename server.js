@@ -219,7 +219,7 @@ app.get('/api/me', authMiddleware, (req, res) => {
 
 // Update profile
 app.put('/api/profile', authMiddleware, asyncHandler(async (req, res) => {
-    const { nickname, bio } = req.body;
+    const { nickname, bio, birthday, gender } = req.body;
     const updates = [];
     const values = [];
     let idx = 1;
@@ -232,6 +232,16 @@ app.put('/api/profile', authMiddleware, asyncHandler(async (req, res) => {
     if (bio) {
         updates.push(`bio = $${idx}`);
         values.push(bio);
+        idx++;
+    }
+    if (birthday !== undefined) {
+        updates.push(`birthday = $${idx}`);
+        values.push(birthday || null);
+        idx++;
+    }
+    if (gender !== undefined) {
+        updates.push(`gender = $${idx}`);
+        values.push(gender || null);
         idx++;
     }
 
