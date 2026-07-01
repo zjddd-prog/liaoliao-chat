@@ -187,12 +187,26 @@ app.put('/api/profile', authMiddleware, asyncHandler(async (req, res) => {
     res.json({ success: true, user: { id: u.id, nickname: u.nickname, bio: u.bio, avatarColor: u.avatar_color, avatarText: u.avatar_text } });
 }));
 
+// Update avatar color
+app.put('/api/avatar-color', authMiddleware, asyncHandler(async (req, res) => {
+    const { avatarColor } = req.body;
+    if (!avatarColor) return res.status(400).json({ error: '请选择颜色' });
+    await pool.query('UPDATE users SET avatar_color = $1 WHERE id = $2', [avatarColor, req.user.id]);
+    res.json({ success: true, avatarColor });
+}));
+
 // Upload avatar
 app.post('/api/avatar', authMiddleware, upload.single('avatar'), asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: '请上传图片' });
     const url = `/uploads/${req.file.filename}`;
     await pool.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [url, req.user.id]);
     res.json({ success: true, avatarUrl: url });
+}));
+
+// Clear avatar
+app.delete('/api/avatar', authMiddleware, asyncHandler(async (req, res) => {
+    await pool.query('UPDATE users SET avatar_url = NULL WHERE id = $1', [req.user.id]);
+    res.json({ success: true });
 }));
 
 // Get all users
