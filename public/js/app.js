@@ -79,6 +79,18 @@ const App = {
             }
         });
 
+        // 通讯录事件委托——点击联系人直接打开聊天
+        document.getElementById('contacts-list')?.addEventListener('click', (e) => {
+            const contactItem = e.target.closest('.contact-item');
+            if (!contactItem) return;
+            const type = contactItem.dataset.chatType;
+            const id = contactItem.dataset.chatId;
+            const name = contactItem.dataset.chatName;
+            if (type && id && name) {
+                this.openChat(type, id, name);
+            }
+        });
+
         // 通讯录搜索
         document.getElementById('contact-search')?.addEventListener('input', e => {
             this.renderContacts(e.target.value.toLowerCase());
@@ -633,6 +645,9 @@ const App = {
         document.querySelectorAll('.nav-item[data-view]').forEach(item => {
             item.classList.toggle('active', item.dataset.view === view);
         });
+        // 切换视图时清除主页按钮激活状态
+        const profileNav = document.getElementById('nav-profile');
+        if (profileNav) profileNav.classList.remove('active');
         document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
         document.getElementById(`view-${view}`)?.classList.remove('hidden');
 
@@ -2501,6 +2516,10 @@ const App = {
     // ========== 用户主页 ==========
 
     showMyProfile() {
+        if (!this.currentUser || !this.currentUser.id) {
+            this.toast('请先登录', 'error');
+            return;
+        }
         this.viewProfile(this.currentUser.id, true);
     },
 
