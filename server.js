@@ -79,7 +79,9 @@ async function authMiddleware(req, res, next) {
 
 async function adminMiddleware(req, res, next) {
     await authMiddleware(req, res, async () => {
-        if (req.user.role !== 'admin') return res.status(403).json({ error: '需要管理员权限' });
+        if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+            return res.status(403).json({ error: '需要管理员权限' });
+        }
         next();
     });
 }
@@ -314,6 +316,89 @@ app.get('/api/messages/group/:groupId', authMiddleware, asyncHandler(async (req,
         content: m.content, messageType: m.message_type || 'text',
         timestamp: m.created_at
     })));
+}));
+
+// Get combined chat list (friends + groups)
+app.get('/api/chat-list', authMiddleware, asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+
+    // Get accepted friends
+    const friendsResult = await pool.query(
+        'SELECT user_id, friend_id FROM friendships WHERE (user_id=$1 OR friend_id=$1) AND status=$2',
+        [userId, 'accepted']
+    );
+    const friendIds = friendsResult.rows.map(f => f.user_id === userId ? f.friend_id : f.user_id);
+
+    const friends = [];
+    for (const fid of friendIds) {
+        const userRes = await pool.query('SELECT id, nickname, avatar_color, avatar_text, avatar_url FROM users WHERE id=$1', [fid]);
+        if (userRes.rows.length === 0) continue;
+        const u = userRes.rows[0];
+
+        // Last private message
+        const lastMsgRes = await pool.query(
+            `SELECT content, created_at FROM messages WHERE type='private' AND
+             ((sender_id=$1 AND target_id=$2) OR (sender_id=$2 AND target_id=$1))
+             ORDER BY created_at DESC LIMIT 1`,
+            [userId, fid]
+        );
+
+        // Unread count
+        const unreadRes = await pool.query(
+            "SELECT COUNT(*) FROM messages WHERE type='private' AND sender_id=$1 AND target_id=$2 AND is_read=false",
+            [fid, userId]
+        );
+
+        friends.push({
+            id: u.id,
+            nickname: u.nickname,
+            avatarColor: u.avatar_color,
+            avatarText: u.avatar_text,
+            avatarUrl: u.avatar_url,
+            lastMsg: lastMsgRes.rows.length > 0 ? {
+                content: lastMsgRes.rows[0].content,
+                timestamp: lastMsgRes.rows[0].created_at
+            } : null,
+            unread: parseInt(unreadRes.rows[0].count)
+        });
+    }
+
+    // Get groups where current user is a member
+    const groupsResult = await pool.query(
+        'SELECT id, name, description, avatar_color, avatar_text, members FROM groups_t WHERE members @> $1::jsonb',
+        [JSON.stringify([userId])]
+    );
+
+    const groups = [];
+    for (const g of groupsResult.rows) {
+        // Last group message
+        const lastMsgRes = await pool.query(
+            "SELECT content, created_at FROM messages WHERE type='group' AND target_id=$1 ORDER BY created_at DESC LIMIT 1",
+            [g.id]
+        );
+
+        // Unread count
+        const unreadRes = await pool.query(
+            "SELECT COUNT(*) FROM messages WHERE type='group' AND target_id=$1 AND sender_id!=$2 AND (read_by IS NULL OR NOT read_by @> $3::jsonb)",
+            [g.id, userId, JSON.stringify([userId])]
+        );
+
+        groups.push({
+            id: g.id,
+            name: g.name,
+            description: g.description,
+            avatarColor: g.avatar_color,
+            avatarText: g.avatar_text,
+            memberCount: Array.isArray(g.members) ? g.members.length : JSON.parse(g.members || '[]').length,
+            lastMsg: lastMsgRes.rows.length > 0 ? {
+                content: lastMsgRes.rows[0].content,
+                timestamp: lastMsgRes.rows[0].created_at
+            } : null,
+            unread: parseInt(unreadRes.rows[0].count)
+        });
+    }
+
+    res.json({ friends, groups });
 }));
 
 app.get('/api/messages/unread', authMiddleware, asyncHandler(async (req, res) => {
