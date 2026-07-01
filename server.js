@@ -505,7 +505,7 @@ app.get('/api/groups', authMiddleware, asyncHandler(async (req, res) => {
         id: g.id, name: g.name, description: g.description,
         avatarColor: g.avatar_color, avatarText: g.avatar_text,
         memberCount: (g.members || []).length, createdAt: g.created_at,
-        type: g.group_type, ownerId: g.owner_id,
+        type: g.group_type, ownerId: g.owner_id || (g.members || [])[0] || '',
         hasPassword: !!(g.password && g.password !== '')
     })));
 }));
@@ -522,7 +522,7 @@ app.get('/api/groups/discover', authMiddleware, asyncHandler(async (req, res) =>
             type: g.group_type || 'public',
             hasPassword: !!(g.password && g.password !== ''),
             isMember: members.includes(req.user.id),
-            ownerId: g.owner_id
+            ownerId: g.owner_id || members[0] || ''
         };
     }));
 }));

@@ -184,6 +184,21 @@ async function initTables() {
       console.log('Migration note:', e.message);
     }
 
+    // 数据修复：为没有 owner_id 的旧群聊回填第一个成员作为群主
+    try {
+      const groupsToFix = await client.query(`SELECT id, members FROM groups_t WHERE COALESCE(owner_id, '') = ''`);
+      for (const g of groupsToFix.rows) {
+        const members = g.members || [];
+        if (members.length > 0) {
+          await client.query(`UPDATE groups_t SET owner_id = $1 WHERE id = $2`, [members[0], g.id]);
+          console.log(`Migration: set owner_id for group ${g.id} -> ${members[0]}`);
+        }
+      }
+      console.log('Migration: owner_id backfill completed');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
     // 迁移：添加 banned 字段（如果不存在）
     try {
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT false`);
