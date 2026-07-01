@@ -946,7 +946,7 @@ const App = {
             const viewChats = document.getElementById('view-chats');
             if (viewChats) viewChats.classList.remove('hidden');
             // 隐藏其他 view
-            ['view-contacts', 'view-discover', 'view-moments', 'view-admin'].forEach(id => {
+            ['view-contacts', 'view-discover', 'view-profile', 'view-moments', 'view-admin'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.classList.add('hidden');
             });
@@ -959,8 +959,10 @@ const App = {
             this.currentView = 'chats';
         }
 
-        // 高亮聊天列表当前项（桌面端需要更新；移动端列表已隐藏，仅标记active状态）
+        // 桌面端：确保从其他视图（如个人主页）切入时也能看到聊天面板
         if (!isMobile) {
+            document.getElementById('view-profile')?.classList.add('hidden');
+            document.getElementById('view-chats')?.classList.remove('hidden');
             this.renderChatList();
         } else {
             // 移动端只更新active类，不重新请求数据
