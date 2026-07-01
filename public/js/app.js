@@ -362,11 +362,22 @@ const App = {
             if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
             const sendBtn = document.querySelector('.chat-send-btn');
             if (sendBtn) sendBtn.disabled = false;
-            // 恢复输入框（如果之前被禁言过）
+            // 恢复输入框（之前被禁言的不恢复）
             const input = document.getElementById('chat-input');
             if (input) {
-                input.disabled = false;
-                input.placeholder = t('chat.input') || '输入消息...';
+                if (this.currentUser && this.currentUser.mutedUntil) {
+                    const mu = this.currentUser.mutedUntil;
+                    if (mu === -1 || mu > Date.now()) {
+                        input.disabled = true;
+                        input.placeholder = t('error.muted') || '你已被禁言';
+                    } else {
+                        input.disabled = false;
+                        input.placeholder = t('chat.input') || '输入消息...';
+                    }
+                } else {
+                    input.disabled = false;
+                    input.placeholder = t('chat.input') || '输入消息...';
+                }
             }
         });
 
@@ -479,11 +490,29 @@ const App = {
         });
 
         // 禁言相关事件
-        this.socket.on('muted-error', (data) => {
-            this.toast(data.message, 'error');
+        this.socket.on('message-error', (data) => {
+            // 服务端拒绝了消息（禁言等原因），移除本地乐观渲染的临时消息
+            this.removeLocalTempMessages();
+            // 释放发送锁
+            this._sendLock = false;
+            if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = false;
+            this.toast(data.error || data.message || '消息发送失败', 'error');
         });
 
         this.socket.on('muted', (data) => {
+            // 同步更新本地用户状态
+            if (this.currentUser) {
+                this.currentUser.mutedUntil = data.mutedUntil;
+            }
+            // 移除本地乐观渲染的临时消息
+            this.removeLocalTempMessages();
+            // 释放发送锁
+            this._sendLock = false;
+            if (this._sendLockTimeout) { clearTimeout(this._sendLockTimeout); this._sendLockTimeout = null; }
+            const sendBtn = document.querySelector('.chat-send-btn');
+            if (sendBtn) sendBtn.disabled = false;
             const until = data.mutedUntil;
             const now = Date.now();
             let msg = t('error.muted') || '你已被禁言';
@@ -503,6 +532,10 @@ const App = {
         });
 
         this.socket.on('unmuted', () => {
+            // 清除本地禁言状态
+            if (this.currentUser) {
+                this.currentUser.mutedUntil = null;
+            }
             this.toast(t('admin.unmuteSuccess') || '已解除禁言', 'success');
             // 启用输入框
             const input = document.getElementById('chat-input');
@@ -1142,6 +1175,14 @@ const App = {
 
     // ========== 发送消息 ==========
 
+    // 移除本地乐观渲染的临时消息（当服务端拒绝时调用）
+    removeLocalTempMessages() {
+        const area = document.getElementById('messages-area');
+        if (!area) return;
+        const tempMsgs = area.querySelectorAll('.msg-row[data-msg-id^="temp_"]');
+        tempMsgs.forEach(row => row.remove());
+    },
+
     sendMessage() {
         // 检查是否有打开的聊天
         if (!this.currentChatId || !this.currentChatType) {
@@ -1156,6 +1197,21 @@ const App = {
             // 尝试重连
             if (this.socket) this.socket.connect();
             return;
+        }
+        // 检查是否被禁言
+        if (this.currentUser && this.currentUser.mutedUntil) {
+            const muteUntil = this.currentUser.mutedUntil;
+            if (muteUntil === -1 || muteUntil > Date.now()) {
+                this.toast(t('error.muted') || '你已被禁言，无法发送消息', 'error');
+                // 禁言状态下禁用输入框并清空内容
+                const muteInput = document.getElementById('chat-input');
+                if (muteInput) {
+                    muteInput.disabled = true;
+                    muteInput.value = '';
+                    muteInput.placeholder = t('error.muted') || '你已被禁言';
+                }
+                return;
+            }
         }
 
         const input = document.getElementById('chat-input');
@@ -1328,7 +1384,7 @@ const App = {
             : '';
 
         const msgHTML = `
-            <div class="msg-row ${side}">
+            <div class="msg-row ${side}" data-msg-id="${this.escapeAttr(msg.id || '')}">
                 ${avatarHTML}
                 <div>
                     ${nameTag}

@@ -1108,11 +1108,27 @@ app.post('/api/admin/mute/:userId', adminMiddleware, asyncHandler(async (req, re
     else mutedUntil = -1; // permanent
 
     await pool.query('UPDATE users SET muted_until = $1 WHERE id = $2', [mutedUntil, req.params.userId]);
+
+    // 通过 Socket 通知被禁言用户
+    const targetSocket = Array.from(io.sockets.sockets.values())
+        .find(s => s.userId === req.params.userId);
+    if (targetSocket) {
+        targetSocket.emit('muted', { mutedUntil });
+    }
+
     res.json({ success: true, mutedUntil });
 }));
 
 app.post('/api/admin/unmute/:userId', adminMiddleware, asyncHandler(async (req, res) => {
     await pool.query('UPDATE users SET muted_until = NULL WHERE id = $1', [req.params.userId]);
+
+    // 通过 Socket 通知解除禁言
+    const targetSocket = Array.from(io.sockets.sockets.values())
+        .find(s => s.userId === req.params.userId);
+    if (targetSocket) {
+        targetSocket.emit('unmuted', {});
+    }
+
     res.json({ success: true });
 }));
 
