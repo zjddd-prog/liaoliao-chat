@@ -461,6 +461,13 @@ const App = {
         this.socket.on('moment-deleted', () => { this.renderMoments(); });
         this.socket.on('user-deleted', () => { this.refreshChatListDebounced(); this.renderContacts(); this.renderMoments(); });
         this.socket.on('groups-updated', () => { this.refreshChatListDebounced(); });
+        this.socket.on('group-deleted', (data) => {
+            if (this.currentChatType === 'group' && this.currentChatId === data.groupId) {
+                this.toast('该群已被群主删除', 'warning');
+                this.switchView('messages');
+            }
+            this.refreshChatListDebounced();
+        });
 
         this.socket.on('banned', (data) => {
             this.toast(data.message, 'error');
@@ -1669,22 +1676,33 @@ const App = {
 
             let html = '';
 
-            // 群聊推荐
+            // 群聊推荐 - 从发现接口获取所有群
             html += `<div class="discover-section-title">🔥 ${t('discover.hotGroups') || '热门群聊'}</div>`;
             try {
-                const groups = await this.api('/api/groups');
+                const groups = await this.api('/api/groups/discover');
                 groups.forEach(g => {
-                    const typeLabel = g.type === 'private' ? '🔒 ' + (t('discover.privateGroup') || '私密') : '🌐 ' + (t('discover.publicGroup') || '公开');
+                    let btnHTML;
+                    if (g.isMember) {
+                        btnHTML = `<button class="btn-secondary btn-sm" onclick="event.stopPropagation();App.openChat('group','${g.id}','${this.escapeAttr(g.name)}')">${t('discover.chat') || '进入'}</button>`;
+                    } else if (g.type === 'private') {
+                        btnHTML = `<button class="btn-primary btn-sm">🔒 ${t('group.join') || '加入'}</button>`;
+                    } else {
+                        btnHTML = `<button class="btn-primary btn-sm">${t('group.join') || '加入'}</button>`;
+                    }
+                    const typeLabel = g.type === 'private' ? `🔒 ${t('discover.privateGroup') || '私密'}` : `🌐 ${t('discover.publicGroup') || '公开'}`;
                     html += `
                         <div class="discover-user-card" onclick="App.joinGroup('${g.id}')">
                             <div class="discover-user-info">
-                                <div class="discover-user-name">${g.name} <span class="group-type-tag group-type-${g.type || 'public'}">${typeLabel}</span></div>
-                                <div class="discover-user-bio">${g.description || '暂无简介'} · ${g.memberCount}人</div>
+                                <div class="discover-user-name">${this.escapeHtml(g.name)} <span class="group-type-tag group-type-${g.type || 'public'}">${typeLabel}</span></div>
+                                <div class="discover-user-bio">${this.escapeHtml(g.description || '暂无简介')} · ${g.memberCount}人${g.isMember ? ' · ✅ 已加入' : ''}</div>
                             </div>
-                            <button class="btn-primary btn-sm">${t('group.join') || '加入'}</button>
+                            ${btnHTML}
                         </div>
                     `;
                 });
+                if (groups.length === 0) {
+                    html += `<div class="discover-empty">还没有群聊，快创建一个吧</div>`;
+                }
             } catch {}
 
             // 好友
@@ -1742,17 +1760,46 @@ const App = {
 
     async showGroupMembers(groupId) {
         try {
-            const members = await this.api(`/api/groups/${groupId}/members`);
-            const body = members.map(m => {
+            const [members, groups] = await Promise.all([
+                this.api(`/api/groups/${groupId}/members`),
+                this.api('/api/groups/discover')
+            ]);
+            const group = groups.find(g => g.id === groupId);
+            const ownerId = group ? group.ownerId : null;
+            const isOwner = ownerId === (this.currentUser?.id);
+
+            const headerHTML = group ? `<div style="padding:12px;background:var(--bg-light);border-radius:8px;margin-bottom:12px;">
+                <strong>${this.escapeHtml(group.name)}</strong>
+                <div style="font-size:12px;color:var(--text-light);">${group.description || ''} · ${group.memberCount}人 · ${group.type === 'private' ? '🔒私密' : '🌐公开'}</div>
+            </div>` : '';
+
+            const body = headerHTML + members.map(m => {
+                const isGroupOwner = m.id === ownerId;
+                const badge = isGroupOwner ? ' <span style="font-size:11px;background:#FFD700;color:#333;padding:2px 6px;border-radius:10px;">群主</span>' : '';
                 return `
-                    <div class="contact-item">
+                    <div class="contact-item" style="cursor:pointer;" onclick="App.openChat('private','${this.escapeAttr(m.id)}','${this.escapeAttr(m.nickname)}')">
                         <div class="contact-info">
-                            <div class="contact-name">${m.nickname}</div>
+                            <div class="contact-name">${this.escapeHtml(m.nickname)}${badge}</div>
                         </div>
                     </div>
                 `;
             }).join('');
-            this.showModal('群成员', body, '');
+
+            // 底部操作按钮
+            let actionButtons = '';
+            if (isOwner) {
+                actionButtons = `
+                    <div style="display:flex;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+                        <button class="btn-danger" onclick="App.deleteGroup('${this.escapeAttr(groupId)}')" style="flex:1;">🗑️ 删除群聊</button>
+                    </div>`;
+            } else {
+                actionButtons = `
+                    <div style="display:flex;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+                        <button class="btn-secondary" onclick="App.leaveGroup('${this.escapeAttr(groupId)}')" style="flex:1;">🚪 退出群聊</button>
+                    </div>`;
+            }
+
+            this.showModal('群成员', body + actionButtons, '');
         } catch (e) {
             this.toast(e.message, 'error');
         }
@@ -3146,21 +3193,28 @@ const App = {
     },
 
     // 加入群组（更新版，支持密码输入）
-    joinGroup(groupId) {
-        // First check if group has password
-        this.api('/api/groups').then(groups => {
+    async joinGroup(groupId) {
+        try {
+            // 从发现接口获取群信息（含 hasPassword/isMember）
+            const groups = await this.api('/api/groups/discover');
             const group = groups.find(g => g.id === groupId);
-            if (group && group.hasPassword && !group.isMember) {
-                // Show password modal
+            if (!group) { this.toast('群不存在', 'error'); return; }
+            if (group.isMember) {
+                // 已加入，直接进入聊天
+                this.openChat('group', groupId, group.name);
+                return;
+            }
+            if (group.hasPassword) {
+                // 私密群，弹出密码输入
                 const body = `<div>
-                    <p style="font-size:14px;margin-bottom:12px;">「${group.name}」${t('group.privateJoinDesc')}</p>
-                    <input type="password" id="join-password" placeholder="${t('group.passwordInput')}" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
+                    <p style="font-size:14px;margin-bottom:12px;">「${this.escapeHtml(group.name)}」${t('group.privateJoinDesc') || '需要密码才能加入'}</p>
+                    <input type="password" id="join-password" placeholder="${t('group.passwordInput') || '请输入密码'}" style="width:100%;padding:10px;border:2px solid var(--border);border-radius:8px;">
                 </div>`;
                 const footer = `
-                    <button class="btn-secondary" onclick="App.closeModal()">${t('group.cancelBtn')}</button>
-                    <button class="btn-primary" id="join-group-btn">${t('group.joinBtn')}</button>
+                    <button class="btn-secondary" onclick="App.closeModal()">${t('group.cancelBtn') || '取消'}</button>
+                    <button class="btn-primary" id="join-group-btn">${t('group.joinBtn') || '加入'}</button>
                 `;
-                this.showModal(t('group.privateJoinTitle'), body, footer);
+                this.showModal(t('group.privateJoinTitle') || '私密群加入', body, footer);
 
                 document.getElementById('join-group-btn').addEventListener('click', async () => {
                     const pw = document.getElementById('join-password').value.trim();
@@ -3168,7 +3222,7 @@ const App = {
                     try {
                         await this.api('/api/groups/join', 'POST', { groupId, password: pw });
                         this.closeModal();
-                        this.toast(t('group.joined'), 'success');
+                        this.toast(t('group.joined') || '已加入', 'success');
                         this.renderDiscover();
                         this.renderChatList();
                     } catch (e) {
@@ -3176,14 +3230,50 @@ const App = {
                     }
                 });
             } else {
-                // Public group or already member
-                this.api('/api/groups/join', 'POST', { groupId }).then(() => {
-                    this.toast('已加入群聊！', 'success');
-                    this.renderDiscover();
-                    this.renderChatList();
-                }).catch(e => this.toast(e.message, 'error'));
+                // 公开群，直接加入
+                await this.api('/api/groups/join', 'POST', { groupId });
+                this.toast('已加入群聊！', 'success');
+                this.renderDiscover();
+                this.renderChatList();
             }
-        });
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    // 删除群聊（仅群主）
+    async deleteGroup(groupId) {
+        if (!confirm('确定要删除该群聊吗？所有群消息将被清除，此操作不可撤销。')) return;
+        try {
+            await this.api(`/api/groups/${groupId}`, 'DELETE');
+            this.closeModal();
+            this.toast('群聊已删除', 'success');
+            // 如果当前正在该群聊天，退回消息列表
+            if (this.currentChatType === 'group' && this.currentChatId === groupId) {
+                this.switchView('messages');
+            }
+            this.renderDiscover();
+            this.renderChatList();
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    // 退出群聊
+    async leaveGroup(groupId) {
+        if (!confirm('确定要退出该群聊吗？')) return;
+        try {
+            await this.api(`/api/groups/${groupId}/leave`, 'POST');
+            this.closeModal();
+            this.toast('已退出群聊', 'success');
+            if (this.currentChatType === 'group' && this.currentChatId === groupId) {
+                this.switchView('messages');
+            }
+            this.renderDiscover();
+            this.renderChatList();
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
     },
 
     // ========== 工具方法 ==========

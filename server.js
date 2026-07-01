@@ -502,40 +502,68 @@ app.get('/api/groups', authMiddleware, asyncHandler(async (req, res) => {
     res.json(result.rows.map(g => ({
         id: g.id, name: g.name, description: g.description,
         avatarColor: g.avatar_color, avatarText: g.avatar_text,
-        memberCount: (g.members || []).length, createdAt: g.created_at
+        memberCount: (g.members || []).length, createdAt: g.created_at,
+        type: g.group_type, ownerId: g.owner_id,
+        hasPassword: !!(g.password && g.password !== '')
     })));
 }));
 
+// 发现页群聊列表（返回所有群，含是否已加入/是否有密码等标记，但不含密码原文）
+app.get('/api/groups/discover', authMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM groups_t ORDER BY created_at DESC');
+    res.json(result.rows.map(g => {
+        const members = g.members || [];
+        return {
+            id: g.id, name: g.name, description: g.description,
+            avatarColor: g.avatar_color, avatarText: g.avatar_text,
+            memberCount: members.length, createdAt: g.created_at,
+            type: g.group_type || 'public',
+            hasPassword: !!(g.password && g.password !== ''),
+            isMember: members.includes(req.user.id),
+            ownerId: g.owner_id
+        };
+    }));
+}));
+
 app.post('/api/groups/create', authMiddleware, asyncHandler(async (req, res) => {
-    const { name, description } = req.body;
+    const { name, description, type, password } = req.body;
     if (!name) return res.status(400).json({ error: '群名必填' });
 
     const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#fee140'];
     const id = 'g_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    const newGroup = {
-        id, name, description: description || '',
-        avatar_color: colors[Math.floor(Math.random() * colors.length)],
-        avatar_text: name.slice(0, 1),
-        members: [req.user.id],
-        created_at: Date.now()
-    };
+    const groupType = type || 'public';
+    const groupPassword = (groupType === 'private') ? (password || '123456') : '';
 
     await pool.query(
-        'INSERT INTO groups_t (id, name, description, avatar_color, avatar_text, members, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [id, name, description || '', newGroup.avatar_color, newGroup.avatar_text, JSON.stringify([req.user.id]), Date.now()]
+        'INSERT INTO groups_t (id, name, description, group_type, password, owner_id, avatar_color, avatar_text, members, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+        [id, name, description || '', groupType, groupPassword, req.user.id, colors[Math.floor(Math.random() * colors.length)], name.slice(0, 1), JSON.stringify([req.user.id]), Date.now()]
     );
 
-    io.emit('group-created', { id, name, description: description || '', avatarColor: newGroup.avatar_color, avatarText: newGroup.avatar_text, members: [req.user.id], createdAt: Date.now() });
-    res.json({ success: true, group: { id, name, description: description || '', avatarColor: newGroup.avatar_color, avatarText: newGroup.avatar_text, members: [req.user.id], createdAt: Date.now() } });
+    const newGroup = {
+        id, name, description: description || '', type: groupType,
+        hasPassword: groupPassword !== '',
+        avatarColor: colors[Math.floor(Math.random() * colors.length)],
+        avatarText: name.slice(0, 1),
+        memberCount: 1, createdAt: Date.now(), ownerId: req.user.id
+    };
+    io.emit('group-created', newGroup);
+    res.json({ success: true, group: newGroup });
 }));
 
 app.post('/api/groups/join', authMiddleware, asyncHandler(async (req, res) => {
-    const { groupId } = req.body;
+    const { groupId, password } = req.body;
     const result = await pool.query('SELECT * FROM groups_t WHERE id = $1', [groupId]);
     if (result.rows.length === 0) return res.status(404).json({ error: '群不存在' });
     const group = result.rows[0];
     const members = group.members || [];
     if (members.includes(req.user.id)) return res.status(400).json({ error: '已经在群里了' });
+
+    // 私密群验证密码
+    if (group.group_type === 'private' && group.password && group.password !== '') {
+        if (!password || password !== group.password) {
+            return res.status(403).json({ error: '密码错误' });
+        }
+    }
 
     members.push(req.user.id);
     await pool.query('UPDATE groups_t SET members = $1 WHERE id = $2', [JSON.stringify(members), groupId]);
@@ -560,6 +588,40 @@ app.get('/api/groups/:groupId/members', authMiddleware, asyncHandler(async (req,
     res.json(usersResult.rows.map(u => ({
         id: u.id, nickname: u.nickname, avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url
     })));
+}));
+
+// 删除群聊（仅群主可操作）
+app.delete('/api/groups/:groupId', authMiddleware, asyncHandler(async (req, res) => {
+    const group = await pool.query('SELECT * FROM groups_t WHERE id = $1', [req.params.groupId]);
+    if (group.rows.length === 0) return res.status(404).json({ error: '群不存在' });
+
+    const g = group.rows[0];
+    // 检查是否为群主（优先用 owner_id，兼容旧数据用第一个成员）
+    const ownerId = g.owner_id || (g.members && g.members[0]) || '';
+    if (ownerId !== req.user.id) return res.status(403).json({ error: '只有群主才能删除群聊' });
+
+    // 删除群内所有消息
+    await pool.query("DELETE FROM messages WHERE type='group' AND target_id = $1", [req.params.groupId]);
+    // 删除群
+    await pool.query('DELETE FROM groups_t WHERE id = $1', [req.params.groupId]);
+
+    io.emit('group-deleted', { groupId: req.params.groupId });
+    io.emit('groups-updated');
+    res.json({ success: true });
+}));
+
+// 退出群聊
+app.post('/api/groups/:groupId/leave', authMiddleware, asyncHandler(async (req, res) => {
+    const group = await pool.query('SELECT * FROM groups_t WHERE id = $1', [req.params.groupId]);
+    if (group.rows.length === 0) return res.status(404).json({ error: '群不存在' });
+
+    const g = group.rows[0];
+    const members = (g.members || []).filter(m => m !== req.user.id);
+    await pool.query('UPDATE groups_t SET members = $1 WHERE id = $2', [JSON.stringify(members), req.params.groupId]);
+
+    io.to(req.params.groupId).emit('group-member-left', { groupId: req.params.groupId, userId: req.user.id });
+    io.emit('groups-updated');
+    res.json({ success: true });
 }));
 
 // Upload chat image

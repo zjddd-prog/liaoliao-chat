@@ -176,6 +176,14 @@ async function initTables() {
       console.log('Migration note:', e.message);
     }
 
+    // 迁移：添加 owner_id 字段（如果不存在）——群创建者
+    try {
+      await client.query(`ALTER TABLE groups_t ADD COLUMN IF NOT EXISTS owner_id TEXT DEFAULT ''`);
+      console.log('Migration: owner_id column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
     // 迁移：添加 banned 字段（如果不存在）
     try {
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT false`);
