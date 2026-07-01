@@ -1,3 +1,7 @@
 node_modules/
 data/
 public/uploads/
+desktop/dist/
+desktop/node_modules/
+android/node_modules/
+android/android/

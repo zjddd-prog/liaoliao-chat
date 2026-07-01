@@ -3457,5 +3457,14 @@ const App = {
     }
 };
 
+// ========== PWA Service Worker 注册 ==========
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(reg => console.log('[PWA] Service Worker 已注册:', reg.scope))
+            .catch(err => console.warn('[PWA] Service Worker 注册失败:', err));
+    });
+}
+
 // 启动
 document.addEventListener('DOMContentLoaded', () => App.init());
