@@ -2426,8 +2426,37 @@ const App = {
                     ${user.gender ? `<div class="profile-info-row"><span class="profile-info-label">⚧ 性别</span><span class="profile-info-value">${userGender}</span></div>` : ''}
                 </div>
             `;
+            const avatarHTML = user.avatarUrl
+                ? `<img src="${user.avatarUrl}" alt="">`
+                : (user.avatarText || user.nickname?.slice(0,1) || '?');
+            const avatarBg = user.avatarUrl ? 'transparent' : (user.avatarColor || '#667eea');
+
+            const avatarEditHTML = isSelf ? `
+                <div class="profile-avatar-editor">
+                    <div class="profile-avatar-large" style="background:${avatarBg}">${avatarHTML}</div>
+                    <div class="profile-avatar-actions">
+                        <label class="btn-primary btn-sm">
+                            <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" onchange="App.uploadAvatar(this)">
+                            上传头像
+                        </label>
+                        <button class="btn-secondary btn-sm" onclick="App.clearAvatar()">清除头像</button>
+                    </div>
+                    <div class="profile-avatar-colors">
+                        <span class="profile-color-label">头像颜色:</span>
+                        ${['#667eea','#764ba2','#f093fb','#f5576c','#4facfe','#00f2fe','#43e97b','#fa709a','#fee140','#303030'].map(c => `
+                            <button class="profile-color-btn ${c === avatarBg && !user.avatarUrl ? 'active' : ''}" style="background:${c}" onclick="App.updateAvatarColor('${c}')"></button>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : `
+                <div class="profile-avatar-editor">
+                    <div class="profile-avatar-large" style="background:${avatarBg}">${avatarHTML}</div>
+                </div>
+            `;
+
             contentEl.innerHTML = `
                 <div class="profile-header-area">
+                    ${avatarEditHTML}
                     <div class="profile-name">${user.nickname}</div>
                     ${user.role !== 'user' ? `<div class="profile-role-badge ${roleBadge}">${roleLabels[roleBadge]}</div>` : ''}
                     ${bioHTML}
@@ -2501,6 +2530,54 @@ const App = {
     closeProfile() {
         document.getElementById('view-profile').classList.add('hidden');
         this.switchView('chats');
+    },
+
+    async uploadAvatar(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('avatar', file);
+        try {
+            const res = await fetch('/api/avatar', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + this.token },
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '上传失败');
+            this.currentUser.avatarUrl = data.avatarUrl;
+            this.updateNavAvatar();
+            this.showMyProfile();
+            this.toast('头像上传成功', 'success');
+        } catch (e) {
+            this.toast('头像上传失败: ' + e.message, 'error');
+        }
+        input.value = '';
+    },
+
+    async updateAvatarColor(color) {
+        try {
+            const res = await this.api('/api/avatar-color', 'PUT', { avatarColor: color });
+            this.currentUser.avatarColor = res.avatarColor;
+            this.currentUser.avatarUrl = null;
+            this.updateNavAvatar();
+            this.showMyProfile();
+            this.toast('头像颜色已更新', 'success');
+        } catch (e) {
+            this.toast('更新头像颜色失败: ' + e.message, 'error');
+        }
+    },
+
+    async clearAvatar() {
+        try {
+            await this.api('/api/avatar', 'DELETE');
+            this.currentUser.avatarUrl = null;
+            this.updateNavAvatar();
+            this.showMyProfile();
+            this.toast('头像已清除', 'success');
+        } catch (e) {
+            this.toast('清除头像失败: ' + e.message, 'error');
+        }
     },
 
     // ========== 个人资料编辑 ==========
