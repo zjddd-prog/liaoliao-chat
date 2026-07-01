@@ -1195,12 +1195,20 @@ const App = {
             ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${msg.fromNickname || '?'}</div>`
             : '';
 
+        // 对方消息显示头像
+        const avatarHTML = !isSelf
+            ? `<div class="msg-avatar" style="background:${msg.fromAvatarUrl ? 'transparent' : (msg.fromAvatarColor || '#667eea')};align-self:flex-start;">
+                 ${msg.fromAvatarUrl ? `<img src="${this.escapeAttr(msg.fromAvatarUrl)}" alt="">` : this.escapeHtml(msg.fromAvatarText || '?')}
+               </div>`
+            : '';
+
         const bubbleClass = isSelf
             ? this.getBubbleClass(this.userBubbleStyle)
             : this.getBubbleClass(msg.fromBubbleStyle || 0);
 
         const msgHTML = `
             <div class="msg-row ${side}">
+                ${avatarHTML}
                 <div>
                     ${nameTag}
                     <div class="msg-bubble ${bubbleClass}">${contentHTML}</div>
