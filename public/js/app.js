@@ -2342,8 +2342,6 @@ const App = {
             const iBlockedThem = blockedData.blockedUsers.includes(userId);
 
             // Build profile page
-            const roleBadge = user.role === 'super_admin' ? 'super_admin' : user.role === 'admin' ? 'admin' : 'user';
-
             let momentsHTML = '';
             if (user.moments && user.moments.length > 0) {
                 momentsHTML = `
