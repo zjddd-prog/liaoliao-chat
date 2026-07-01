@@ -1480,8 +1480,11 @@ a, button, div, span, p {
         backdrop-filter: blur(10px);
         -webkit-backdrop-filter: blur(10px);
         border-top: 1px solid var(--border);
-        position: relative;
-        z-index: 30;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 64px;
+        z-index: 50;
         gap: 6px;
         will-change: transform;
     }
@@ -1497,10 +1500,13 @@ a, button, div, span, p {
     .chat-tool-btn { width: 36px; height: 36px; min-width: 36px; min-height: 36px; }
     .chat-send-btn { width: 40px; height: 40px; min-width: 40px; min-height: 40px; border-radius: 50%; }
 
+    /* 消息区域留出底部输入框位置 */
+    .messages-area { padding-bottom: 72px; }
+
     /* 表情面板 */
     .emoji-panel {
         position: fixed;
-        bottom: 56px;
+        bottom: calc(64px + 62px);
         left: 0;
         right: 0;
         width: 100%;
@@ -1621,6 +1627,8 @@ a, button, div, span, p {
     .nav-badge { top: 3px; min-width: 14px; height: 14px; font-size: 9px; transform: translateX(12px); }
     .content-area { height: calc(100dvh - 56px - env(safe-area-inset-bottom, 0px)); }
     .detail-panel { background: var(--card-bg); }
+    .chat-input-area { bottom: 56px; }
+    .messages-area { padding-bottom: 64px; }
 
     .auth-container { padding: 20px 14px; }
     .auth-logo h1 { font-size: 20px; }
