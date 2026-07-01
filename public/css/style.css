@@ -513,6 +513,18 @@ a, button, div, span, p {
     border-radius: 4px;
 }
 .chat-header-members-btn:hover { background: var(--bg); }
+.chat-header-settings-btn {
+    font-size: 16px;
+    color: #888;
+    margin-left: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    transition: all 0.2s;
+}
+.chat-header-settings-btn:hover { background: var(--bg); color: var(--text); }
 .chat-header-report-btn {
     font-size: 13px;
     color: #ff9f43;
@@ -1448,6 +1460,7 @@ a, button, div, span, p {
     /* 聊天头部 */
     .chat-header { padding: 10px 12px; flex-shrink: 0; gap: 8px; background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); }
     .chat-header-members-btn { min-width: 40px; min-height: 36px; font-size: 13px; padding: 6px 12px; border-radius: 18px; }
+    .chat-header-settings-btn { min-width: 36px; min-height: 36px; font-size: 16px; padding: 6px 10px; border-radius: 18px; }
     .chat-header-name { font-size: 16px; }
     .chat-header-status { font-size: 11px; }
 
