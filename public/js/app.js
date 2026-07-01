@@ -658,9 +658,6 @@ const App = {
         document.querySelectorAll('.nav-item[data-view]').forEach(item => {
             item.classList.toggle('active', item.dataset.view === view);
         });
-        // 切换视图时清除主页按钮激活状态
-        const profileNav = document.getElementById('nav-profile');
-        if (profileNav) profileNav.classList.remove('active');
         document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
         document.getElementById(`view-${view}`)?.classList.remove('hidden');
 
@@ -682,6 +679,7 @@ const App = {
         else if (view === 'moments') this.renderMoments();
         else if (view === 'discover') this.renderDiscover();
         else if (view === 'admin') this.renderAdmin();
+        else if (view === 'profile') this.showMyProfile();
     },
 
     updateNavAvatar() {

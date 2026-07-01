@@ -13,11 +13,11 @@
     <meta name="apple-mobile-web-app-title" content="飞友之家">
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     
-    <link rel="stylesheet" href="/css/style.css?v=332">
+    <link rel="stylesheet" href="/css/style.css?v=333">
     <!-- 预加载关键资源 -->
     <link rel="preload" href="/socket.io/socket.io.js" as="script">
-    <link rel="preload" href="/js/i18n.js?v=332" as="script">
-    <link rel="preload" href="/js/app.js?v=332" as="script">
+    <link rel="preload" href="/js/i18n.js?v=333" as="script">
+    <link rel="preload" href="/js/app.js?v=333" as="script">
 </head>
 <body>
     <!-- 骨架屏：无需 JS，立即显示 -->
@@ -110,16 +110,16 @@
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>
                     <span class="nav-label" data-i18n="nav.moments">动态</span>
                 </button>
+                <button class="nav-item" data-view="profile" id="nav-profile" data-i18n-title="nav.profile" title="我的主页">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span class="nav-label" data-i18n="nav.profile">我的</span>
+                </button>
                 <button class="nav-item hidden" data-view="admin" id="nav-admin" data-i18n-title="nav.admin" title="管理后台">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                     <span class="nav-label" data-i18n="nav.admin">管理</span>
                 </button>
             </div>
             <div class="sidebar-bottom">
-                <button class="sidebar-btn" onclick="App.showBubbleShop()" data-i18n-title="nav.bubble" title="气泡商城">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                    <span class="sidebar-btn-label" data-i18n="nav.bubble">气泡</span>
-                </button>
                 <button class="sidebar-btn" onclick="App.showDonation()" data-i18n-title="nav.donate" title="打赏支持">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
                     <span class="sidebar-btn-label" data-i18n="nav.donate">打赏</span>
@@ -251,7 +251,7 @@
     <div class="image-preview-overlay hidden" id="image-preview-overlay" onclick="this.classList.add('hidden')"><img id="image-preview-img" src="" alt=""></div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/js/i18n.js?v=332"></script>
-    <script src="/js/app.js?v=332"></script>
+    <script src="/js/i18n.js?v=333"></script>
+    <script src="/js/app.js?v=333"></script>
 </body>
 </html>

@@ -26,6 +26,7 @@ const I18N = {
         'nav.chats': { 'zh-CN': '消息', en: 'Chats', ja: 'メッセージ', ko: '메시지' },
         'nav.contacts': { 'zh-CN': '通讯录', en: 'Contacts', ja: '連絡先', ko: '연락처' },
         'nav.moments': { 'zh-CN': '动态', en: 'Moments', ja: 'モーメント', ko: '모먼트' },
+        'nav.profile': { 'zh-CN': '我的', en: 'Profile', ja: 'プロフィール', ko: '프로필' },
         'nav.discover': { 'zh-CN': '发现', en: 'Discover', ja: '発見', ko: '발견' },
         'nav.admin': { 'zh-CN': '管理', en: 'Admin', ja: '管理', ko: '관리' },
         'nav.checkin': { 'zh-CN': '签到', en: 'Check-in', ja: 'チェックイン', ko: '출석' },
