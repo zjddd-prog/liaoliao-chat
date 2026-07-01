@@ -791,7 +791,7 @@ const App = {
                     : this.escapeHtml(displayText);
                 return `
                     <div class="chat-item ${isActive ? 'active' : ''}" data-chat-type="${this.escapeAttr(item.type)}" data-chat-id="${this.escapeAttr(item.id)}" data-chat-name="${this.escapeAttr(item.name)}">
-                        <div class="chat-avatar" style="position:relative;">${this.renderAvatar(item.avatarUrl, displayText, avatarBg, item.avatarFrame, 46)}</div>
+                        <div class="chat-avatar" style="position:relative;${item.type === 'private' ? 'cursor:pointer;' : ''}" ${item.type === 'private' ? `onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(item.id)}')" title="查看主页"` : ''}>${this.renderAvatar(item.avatarUrl, displayText, avatarBg, item.avatarFrame, 46)}</div>
                         <div class="chat-info" style="cursor:pointer;">
                             <div class="chat-name">${onlineDot} ${this.escapeHtml(item.name)} ${memberTag}</div>
                             <div class="chat-last-msg">${item.lastMsg ? this.escapeHtml(item.lastMsg) : t('chat.startChat')}</div>
@@ -837,7 +837,7 @@ const App = {
                 <button class="chat-back-btn" onclick="App.closeChatMobile()">
                     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
                 </button>
-                <div class="chat-header-info">
+                <div class="chat-header-info" ${type === 'private' ? `style="cursor:pointer;" onclick="App.viewProfile('${escId}')" title="查看主页"` : ''}>
                     <div class="chat-header-name">${escName}</div>
                     <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? t('chat.online') : t('chat.offline')) : t('chat.group')}</div>
                 </div>
@@ -1311,14 +1311,28 @@ const App = {
             ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${msg.fromNickname || '?'}</div>`
             : '';
 
-        // 对方消息显示头像
-        const avatarHTML = !isSelf
+        // 对方消息显示头像（可点击进入个人主页）
+        const fromUserId = this.escapeAttr(msg.from || '');
+        const avatarOnly = !isSelf
             ? this.renderAvatar(msg.fromAvatarUrl, msg.fromAvatarText || '?', msg.fromAvatarColor || '#667eea', msg.fromAvatarFrame || 0, 36)
             : '';
+        const avatarHTML = !isSelf && fromUserId
+            ? `<div class="msg-avatar-clickable" onclick="App.viewProfile('${fromUserId}')" style="cursor:pointer;flex-shrink:0;" title="查看主页">${avatarOnly}</div>`
+            : avatarOnly;
 
         const bubbleClass = isSelf
             ? this.getBubbleClass(this.userBubbleStyle)
             : this.getBubbleClass(msg.fromBubbleStyle || 0);
+
+        // 群聊中发送者名字也可点击进入主页
+        const nameTagClickable = (!isSelf && this.currentChatType === 'group' && fromUserId)
+            ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;cursor:pointer;" onclick="event.stopPropagation();App.viewProfile('${fromUserId}')" title="查看主页">${this.escapeHtml(msg.fromNickname || '?')}</div>`
+            : '';
+
+        const nameTag = nameTagClickable
+            || (!isSelf && this.currentChatType === 'group'
+                ? `<div style="font-size:12px;color:var(--primary);font-weight:600;margin-bottom:2px;">${this.escapeHtml(msg.fromNickname || '?')}</div>`
+                : '');
 
         const msgHTML = `
             <div class="msg-row ${side}">
@@ -1443,7 +1457,7 @@ const App = {
                         : this.escapeHtml(f.avatarText || f.nickname.slice(0, 1));
                     return `
                         <div class="contact-item" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(f.nickname)}">
-                            <div class="contact-avatar">${this.renderAvatar(f.avatarUrl, f.avatarText || f.nickname.slice(0, 1), avatarBg, f.avatarFrame, 46)}</div>
+                            <div class="contact-avatar" onclick="event.stopPropagation();App.viewProfile('${escId}')" style="cursor:pointer;" title="查看主页">${this.renderAvatar(f.avatarUrl, f.avatarText || f.nickname.slice(0, 1), avatarBg, f.avatarFrame, 46)}</div>
                             <div class="contact-info" style="cursor:pointer;">
                                 <div class="contact-name">${this.escapeHtml(f.nickname)} ${isOnline ? '<span style="color:#43e97b;font-size:10px;">● 在线</span>' : ''}</div>
                                 <div class="contact-bio">${this.escapeHtml(f.bio || '')}</div>
@@ -1741,8 +1755,10 @@ const App = {
                 friends.forEach(u => {
                     const escId = this.escapeAttr(u.id);
                     const escName = this.escapeAttr(u.nickname);
+                    const uAvatarBg = u.avatarUrl ? 'transparent' : (u.avatarColor || '#667eea');
                     html += `
                         <div class="discover-user-card" style="cursor:pointer;" onclick="App.openChat('private','${escId}','${escName}')">
+                            <div class="discover-user-avatar" onclick="event.stopPropagation();App.viewProfile('${escId}')" style="cursor:pointer;flex-shrink:0;" title="查看主页">${this.renderAvatar(u.avatarUrl, u.avatarText || u.nickname?.slice(0,1) || '?', uAvatarBg, u.avatarFrame || 0, 40)}</div>
                             <div class="discover-user-info">
                                 <div class="discover-user-name">${this.escapeHtml(u.nickname)}</div>
                                 <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
@@ -1758,8 +1774,10 @@ const App = {
                 html += `<div class="discover-section-title" style="margin-top:20px;">✨ ${t('discover.recommendUsers') || '推荐用户'}</div>`;
                 nonFriends.forEach(u => {
                     const escId = this.escapeAttr(u.id);
+                    const uAvatarBg = u.avatarUrl ? 'transparent' : (u.avatarColor || '#667eea');
                     html += `
                         <div class="discover-user-card">
+                            <div class="discover-user-avatar" onclick="App.viewProfile('${escId}')" style="cursor:pointer;flex-shrink:0;" title="查看主页">${this.renderAvatar(u.avatarUrl, u.avatarText || u.nickname?.slice(0,1) || '?', uAvatarBg, u.avatarFrame || 0, 40)}</div>
                             <div class="discover-user-info">
                                 <div class="discover-user-name">${this.escapeHtml(u.nickname)}</div>
                                 <div class="discover-user-bio">${this.escapeHtml(u.bio || '')}</div>
@@ -1807,8 +1825,10 @@ const App = {
             const body = headerHTML + members.map(m => {
                 const isGroupOwner = m.id === ownerId;
                 const badge = isGroupOwner ? ' <span style="font-size:11px;background:#FFD700;color:#333;padding:2px 6px;border-radius:10px;">群主</span>' : '';
+                const mAvatarBg = m.avatar_url ? 'transparent' : (m.avatar_color || '#667eea');
                 return `
-                    <div class="contact-item" style="cursor:pointer;" onclick="App.openChat('private','${this.escapeAttr(m.id)}','${this.escapeAttr(m.nickname)}')">
+                    <div class="contact-item" style="cursor:pointer;display:flex;align-items:center;gap:10px;" onclick="App.openChat('private','${this.escapeAttr(m.id)}','${this.escapeAttr(m.nickname)}')">
+                        <div onclick="event.stopPropagation();App.viewProfile('${this.escapeAttr(m.id)}')" style="cursor:pointer;flex-shrink:0;" title="查看主页">${this.renderAvatar(m.avatar_url, m.avatar_text || m.nickname?.slice(0,1) || '?', mAvatarBg, 0, 36)}</div>
                         <div class="contact-info">
                             <div class="contact-name">${this.escapeHtml(m.nickname)}${badge}</div>
                         </div>
