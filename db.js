@@ -160,6 +160,46 @@ async function initTables() {
       console.log('Migration note:', e.message);
     }
 
+    // 迁移：添加 avatar_frame 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_frame INTEGER DEFAULT 0`);
+      console.log('Migration: avatar_frame column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
+    // 迁移：添加 blocked_users 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS blocked_users JSONB DEFAULT '[]'`);
+      console.log('Migration: blocked_users column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
+    // 迁移：添加 banned 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banned BOOLEAN DEFAULT false`);
+      console.log('Migration: banned column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
+    // 迁移：messages 表添加 message_type 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS message_type TEXT DEFAULT 'text'`);
+      console.log('Migration: message_type column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
+    // 迁移：messages 表添加 from_bubble_style 字段（如果不存在）
+    try {
+      await client.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS from_bubble_style INTEGER DEFAULT 0`);
+      console.log('Migration: from_bubble_style column ensured');
+    } catch (e) {
+      console.log('Migration note:', e.message);
+    }
+
     await client.query('COMMIT');
     console.log('All tables initialized');
   } catch (e) {
