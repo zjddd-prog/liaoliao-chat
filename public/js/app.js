@@ -713,8 +713,14 @@ const App = {
                 const isActive = this.currentChatType === item.type && this.currentChatId === item.id;
                 const onlineDot = item.type === 'private' && item.online ? '<span style="color:#43e97b;font-size:10px;">●</span>' : '';
                 const memberTag = item.type === 'group' ? `<span style="font-size:12px;color:var(--text-light);">(${item.memberCount}人)</span>` : '';
+                const displayText = item.avatarText || (item.name ? item.name.slice(0, 1) : '?');
+                const avatarBg = item.avatarUrl ? 'transparent' : (item.avatarColor || '#667eea');
+                const avatarHTML = item.avatarUrl
+                    ? `<img src="${this.escapeAttr(item.avatarUrl)}" alt="">`
+                    : this.escapeHtml(displayText);
                 return `
                     <div class="chat-item ${isActive ? 'active' : ''}" data-chat-type="${this.escapeAttr(item.type)}" data-chat-id="${this.escapeAttr(item.id)}" data-chat-name="${this.escapeAttr(item.name)}">
+                        <div class="chat-avatar" style="background:${avatarBg};">${avatarHTML}</div>
                         <div class="chat-info" style="cursor:pointer;">
                             <div class="chat-name">${onlineDot} ${this.escapeHtml(item.name)} ${memberTag}</div>
                             <div class="chat-last-msg">${item.lastMsg ? this.escapeHtml(item.lastMsg) : t('chat.startChat')}</div>
@@ -1309,8 +1315,13 @@ const App = {
                 : filtered.map(f => {
                     const isOnline = this.onlineUsers.includes(f.id);
                     const escId = this.escapeAttr(f.id);
+                    const avatarBg = f.avatarUrl ? 'transparent' : (f.avatarColor || '#667eea');
+                    const avatarContent = f.avatarUrl
+                        ? `<img src="${this.escapeAttr(f.avatarUrl)}" alt="">`
+                        : this.escapeHtml(f.avatarText || f.nickname.slice(0, 1));
                     return `
                         <div class="contact-item" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(f.nickname)}">
+                            <div class="contact-avatar" style="background:${avatarBg};">${avatarContent}</div>
                             <div class="contact-info" style="cursor:pointer;">
                                 <div class="contact-name">${this.escapeHtml(f.nickname)} ${isOnline ? '<span style="color:#43e97b;font-size:10px;">● 在线</span>' : ''}</div>
                                 <div class="contact-bio">${this.escapeHtml(f.bio || '')}</div>
