@@ -134,6 +134,8 @@ async function initTables() {
     // Indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_messages_sender_target ON messages(sender_id, target_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_messages_type_target_created ON messages(type, target_id, created_at DESC)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_messages_type_target_sender_read ON messages(type, target_id, sender_id, is_read)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_messages_type ON messages(type)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_groups_t_members ON groups_t USING GIN (members)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_moments_user ON moments(user_id)`);

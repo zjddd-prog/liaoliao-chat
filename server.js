@@ -428,82 +428,98 @@ app.get('/api/messages/group/:groupId', authMiddleware, asyncHandler(async (req,
 app.get('/api/chat-list', authMiddleware, asyncHandler(async (req, res) => {
     const userId = req.user.id;
 
-    // Get accepted friends
-    const friendsResult = await pool.query(
-        'SELECT user_id, friend_id FROM friendships WHERE (user_id=$1 OR friend_id=$1) AND status=$2',
-        [userId, 'accepted']
-    );
-    const friendIds = friendsResult.rows.map(f => f.user_id === userId ? f.friend_id : f.user_id);
+    // 一次性查询所有好友、最后一条私聊消息、未读数（避免 N+1）
+    const friendsResult = await pool.query(`
+        WITH friends AS (
+            SELECT CASE WHEN user_id = $1 THEN friend_id ELSE user_id END AS friend_id
+            FROM friendships
+            WHERE (user_id = $1 OR friend_id = $1) AND status = 'accepted'
+        )
+        SELECT
+            u.id,
+            u.nickname,
+            u.avatar_color,
+            u.avatar_text,
+            u.avatar_url,
+            u.avatar_frame,
+            lm.content AS last_msg_content,
+            lm.created_at AS last_msg_timestamp,
+            COALESCE(unread.cnt, 0) AS unread
+        FROM friends f
+        JOIN users u ON u.id = f.friend_id
+        LEFT JOIN LATERAL (
+            SELECT content, created_at
+            FROM messages
+            WHERE type = 'private'
+              AND ((sender_id = $1 AND target_id = f.friend_id) OR (sender_id = f.friend_id AND target_id = $1))
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) lm ON true
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS cnt
+            FROM messages
+            WHERE type = 'private' AND sender_id = f.friend_id AND target_id = $1 AND is_read = false
+        ) unread ON true
+    `, [userId]);
 
-    const friends = [];
-    for (const fid of friendIds) {
-        const userRes = await pool.query('SELECT id, nickname, avatar_color, avatar_text, avatar_url, avatar_frame FROM users WHERE id=$1', [fid]);
-        if (userRes.rows.length === 0) continue;
-        const u = userRes.rows[0];
+    const friends = friendsResult.rows.map(u => ({
+        id: u.id,
+        nickname: u.nickname,
+        avatarColor: u.avatar_color,
+        avatarText: u.avatar_text,
+        avatarUrl: u.avatar_url,
+        avatarFrame: u.avatar_frame || 0,
+        lastMsg: u.last_msg_content ? {
+            content: u.last_msg_content,
+            timestamp: u.last_msg_timestamp
+        } : null,
+        unread: parseInt(u.unread)
+    }));
 
-        // Last private message
-        const lastMsgRes = await pool.query(
-            `SELECT content, created_at FROM messages WHERE type='private' AND
-             ((sender_id=$1 AND target_id=$2) OR (sender_id=$2 AND target_id=$1))
-             ORDER BY created_at DESC LIMIT 1`,
-            [userId, fid]
-        );
+    // 一次性查询所有群、最后一条群消息、未读数
+    const groupsResult = await pool.query(`
+        SELECT
+            g.id,
+            g.name,
+            g.description,
+            g.avatar_color,
+            g.avatar_text,
+            jsonb_array_length(g.members) AS member_count,
+            lm.content AS last_msg_content,
+            lm.created_at AS last_msg_timestamp,
+            COALESCE(unread.cnt, 0) AS unread
+        FROM groups_t g
+        WHERE g.members @> $1::jsonb
+        LEFT JOIN LATERAL (
+            SELECT content, created_at
+            FROM messages
+            WHERE type = 'group' AND target_id = g.id
+            ORDER BY created_at DESC
+            LIMIT 1
+        ) lm ON true
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS cnt
+            FROM messages
+            WHERE type = 'group'
+              AND target_id = g.id
+              AND sender_id != $1
+              AND (read_by IS NULL OR NOT read_by @> $2::jsonb)
+        ) unread ON true
+    `, [JSON.stringify([userId]), JSON.stringify([userId])]);
 
-        // Unread count
-        const unreadRes = await pool.query(
-            "SELECT COUNT(*) FROM messages WHERE type='private' AND sender_id=$1 AND target_id=$2 AND is_read=false",
-            [fid, userId]
-        );
-
-        friends.push({
-            id: u.id,
-            nickname: u.nickname,
-            avatarColor: u.avatar_color,
-            avatarText: u.avatar_text,
-            avatarUrl: u.avatar_url,
-            avatarFrame: u.avatar_frame || 0,
-            lastMsg: lastMsgRes.rows.length > 0 ? {
-                content: lastMsgRes.rows[0].content,
-                timestamp: lastMsgRes.rows[0].created_at
-            } : null,
-            unread: parseInt(unreadRes.rows[0].count)
-        });
-    }
-
-    // Get groups where current user is a member
-    const groupsResult = await pool.query(
-        'SELECT id, name, description, avatar_color, avatar_text, members FROM groups_t WHERE members @> $1::jsonb',
-        [JSON.stringify([userId])]
-    );
-
-    const groups = [];
-    for (const g of groupsResult.rows) {
-        // Last group message
-        const lastMsgRes = await pool.query(
-            "SELECT content, created_at FROM messages WHERE type='group' AND target_id=$1 ORDER BY created_at DESC LIMIT 1",
-            [g.id]
-        );
-
-        // Unread count
-        const unreadRes = await pool.query(
-            "SELECT COUNT(*) FROM messages WHERE type='group' AND target_id=$1 AND sender_id!=$2 AND (read_by IS NULL OR NOT read_by @> $3::jsonb)",
-            [g.id, userId, JSON.stringify([userId])]
-        );
-
-        groups.push({
-            id: g.id,
-            name: g.name,
-            description: g.description,
-            avatarColor: g.avatar_color,
-            avatarText: g.avatar_text,
-            memberCount: Array.isArray(g.members) ? g.members.length : JSON.parse(g.members || '[]').length,
-            lastMsg: lastMsgRes.rows.length > 0 ? {
-                content: lastMsgRes.rows[0].content,
-                timestamp: lastMsgRes.rows[0].created_at
-            } : null,
-            unread: parseInt(unreadRes.rows[0].count)
-        });
-    }
+    const groups = groupsResult.rows.map(g => ({
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        avatarColor: g.avatar_color,
+        avatarText: g.avatar_text,
+        memberCount: g.member_count || 0,
+        lastMsg: g.last_msg_content ? {
+            content: g.last_msg_content,
+            timestamp: g.last_msg_timestamp
+        } : null,
+        unread: parseInt(g.unread)
+    }));
 
     res.json({ friends, groups });
 }));
