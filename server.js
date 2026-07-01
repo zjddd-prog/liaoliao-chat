@@ -63,6 +63,7 @@ async function authMiddleware(req, res, next) {
             lastCheckinDate: user.last_checkin_date,
             bubbleStyle: user.bubble_style,
             bubblePurchases: user.bubble_purchases || {},
+            avatarFrame: user.avatar_frame || 0,
             blockedUsers: user.blocked_users || [],
             banned: user.banned,
             mutedUntil: user.muted_until,
@@ -152,7 +153,8 @@ app.post('/api/login', asyncHandler(async (req, res) => {
                 avatarColor: user.avatar_color, avatarText: user.avatar_text,
                 avatarUrl: user.avatar_url, role: user.role, createdAt: user.created_at,
                 points: user.points || 0, bubbleStyle: user.bubble_style || 0,
-                bubblePurchases: user.bubble_purchases || {}, lastCheckinDate: user.last_checkin_date }
+                bubblePurchases: user.bubble_purchases || {}, avatarFrame: user.avatar_frame || 0,
+                lastCheckinDate: user.last_checkin_date }
     });
 }));
 
@@ -163,7 +165,8 @@ app.get('/api/me', authMiddleware, (req, res) => {
                avatarColor: user.avatarColor, avatarText: user.avatarText,
                avatarUrl: user.avatarUrl, role: user.role, createdAt: user.createdAt,
                points: user.points || 0, bubbleStyle: user.bubbleStyle || 0,
-               bubblePurchases: user.bubblePurchases || {}, lastCheckinDate: user.lastCheckinDate });
+               bubblePurchases: user.bubblePurchases || {}, avatarFrame: user.avatarFrame || 0,
+               lastCheckinDate: user.lastCheckinDate });
 });
 
 // Update profile
@@ -219,7 +222,7 @@ app.delete('/api/avatar', authMiddleware, asyncHandler(async (req, res) => {
 // Get all users
 app.get('/api/users', authMiddleware, asyncHandler(async (req, res) => {
     const result = await pool.query(
-        `SELECT u.id, u.username, u.nickname, u.bio, u.avatar_color, u.avatar_text, u.avatar_url, u.banned, u.muted_until, u.points, u.created_at,
+        `SELECT u.id, u.username, u.nickname, u.bio, u.avatar_color, u.avatar_text, u.avatar_url, u.avatar_frame, u.banned, u.muted_until, u.points, u.created_at,
                 EXISTS(SELECT 1 FROM friendships f WHERE f.status='accepted' AND
                        ((f.user_id=$1 AND f.friend_id=u.id) OR (f.user_id=u.id AND f.friend_id=$1))) as is_friend
          FROM users u WHERE u.id != $1 AND u.role != 'system'`,
@@ -228,7 +231,7 @@ app.get('/api/users', authMiddleware, asyncHandler(async (req, res) => {
     res.json(result.rows.map(u => ({
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
         avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url,
-        banned: u.banned, mutedUntil: u.muted_until, points: u.points || 0, createdAt: u.created_at, isFriend: u.is_friend
+        banned: u.banned, mutedUntil: u.muted_until, points: u.points || 0, avatarFrame: u.avatar_frame || 0, createdAt: u.created_at, isFriend: u.is_friend
     })));
 }));
 
@@ -247,7 +250,7 @@ app.get('/api/user/:userId', authMiddleware, asyncHandler(async (req, res) => {
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
         avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url,
         role: u.role, gender: u.gender, birthday: u.birthday, createdAt: u.created_at,
-        points: u.points || 0, bubbleStyle: u.bubble_style || 0,
+        points: u.points || 0, bubbleStyle: u.bubble_style || 0, avatarFrame: u.avatar_frame || 0,
         moments: momentsResult.rows.map(m => ({
             id: m.id, content: m.content, images: m.images || [],
             likes: m.likes || [], comments: m.comments || [], createdAt: m.created_at
@@ -353,6 +356,14 @@ app.get('/api/messages/group/:groupId', authMiddleware, asyncHandler(async (req,
          ORDER BY m.created_at ASC`,
         [req.params.groupId]
     );
+
+    // Mark group messages as read by adding current user to read_by
+    await pool.query(
+        `UPDATE messages SET read_by = COALESCE(read_by, '[]'::jsonb) || $1::jsonb
+         WHERE type='group' AND target_id=$2 AND sender_id!=$3
+         AND (read_by IS NULL OR NOT read_by @> $1::jsonb)`,
+        [JSON.stringify([req.user.id]), req.params.groupId, req.user.id]
+    );
     res.json(result.rows.map(m => ({
         id: m.id, from: m.sender_id, to: m.target_id,
         content: m.content, messageType: m.message_type || 'text',
@@ -378,7 +389,7 @@ app.get('/api/chat-list', authMiddleware, asyncHandler(async (req, res) => {
 
     const friends = [];
     for (const fid of friendIds) {
-        const userRes = await pool.query('SELECT id, nickname, avatar_color, avatar_text, avatar_url FROM users WHERE id=$1', [fid]);
+        const userRes = await pool.query('SELECT id, nickname, avatar_color, avatar_text, avatar_url, avatar_frame FROM users WHERE id=$1', [fid]);
         if (userRes.rows.length === 0) continue;
         const u = userRes.rows[0];
 
@@ -402,6 +413,7 @@ app.get('/api/chat-list', authMiddleware, asyncHandler(async (req, res) => {
             avatarColor: u.avatar_color,
             avatarText: u.avatar_text,
             avatarUrl: u.avatar_url,
+            avatarFrame: u.avatar_frame || 0,
             lastMsg: lastMsgRes.rows.length > 0 ? {
                 content: lastMsgRes.rows[0].content,
                 timestamp: lastMsgRes.rows[0].created_at
@@ -768,6 +780,62 @@ app.put('/api/bubbles/equip', authMiddleware, asyncHandler(async (req, res) => {
     res.json({ bubbleStyle: id });
 }));
 
+// ========== Avatar Frames (头像框) ==========
+
+const FRAME_DEFS = [
+    { id: 0, name: '默认边框', price: 0, owned: true, desc: '系统默认' },
+    { id: 1, name: '云端起点', price: 100, icon: '☁️', desc: '蓝天白云，飞行梦想的第一步', color: '#87CEEB' },
+    { id: 2, name: '升空之旅', price: 300, icon: '✈️', desc: '收起起落架，冲向蓝天', color: '#4A90D9' },
+    { id: 3, name: '云海巡航', price: 800, icon: '🌤️', desc: '巡航万米高空，俯瞰云海', color: '#E8F0FE' },
+    { id: 4, name: '金色航线', price: 1500, icon: '✨', desc: '穿越金色航线，荣耀飞行', color: 'linear-gradient(45deg, #FFD700, #FFA500)' },
+    { id: 5, name: '机长之翼', price: 3000, icon: '👨‍✈️', desc: '机长专属，王者之翼', color: 'linear-gradient(135deg, #FFD700, #FF6B35, #FFD700)' },
+];
+
+app.get('/api/avatar-frames', authMiddleware, asyncHandler(async (req, res) => {
+    const userRes = await pool.query('SELECT points, avatar_frame FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+    const frames = FRAME_DEFS.map(f => ({
+        ...f,
+        owned: f.id === 0 || f.id === (user.avatar_frame || 0),
+        equipped: f.id === (user.avatar_frame || 0)
+    }));
+    res.json({ frames, points: user.points || 0, equipped: user.avatar_frame || 0 });
+}));
+
+app.post('/api/avatar-frames/purchase', authMiddleware, asyncHandler(async (req, res) => {
+    const { frameId } = req.body;
+    const id = parseInt(frameId, 10);
+    const frame = FRAME_DEFS.find(f => f.id === id);
+    if (!frame) return res.status(404).json({ error: '头像框不存在' });
+    if (frame.price <= 0) return res.status(400).json({ error: '该头像框无需购买' });
+
+    const userRes = await pool.query('SELECT points, avatar_frame FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+
+    if ((user.avatar_frame || 0) === id) return res.status(400).json({ error: '已拥有该头像框' });
+    if ((user.points || 0) < frame.price) return res.status(400).json({ error: '积分不足' });
+
+    const newPoints = user.points - frame.price;
+    await pool.query('UPDATE users SET points = $1, avatar_frame = $2 WHERE id = $3',
+        [newPoints, id, req.user.id]);
+
+    res.json({ points: newPoints, avatarFrame: id, message: `购买成功！已装备「${frame.name}」` });
+}));
+
+app.put('/api/avatar-frames/equip', authMiddleware, asyncHandler(async (req, res) => {
+    const { frameId } = req.body;
+    const id = parseInt(frameId, 10);
+    const frame = FRAME_DEFS.find(f => f.id === id);
+    if (!frame) return res.status(404).json({ error: '头像框不存在' });
+
+    const userRes = await pool.query('SELECT avatar_frame FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+    if ((user.avatar_frame || 0) !== id && id !== 0) return res.status(400).json({ error: '尚未拥有该头像框' });
+
+    await pool.query('UPDATE users SET avatar_frame = $1 WHERE id = $2', [id, req.user.id]);
+    res.json({ avatarFrame: id });
+}));
+
 // ========== User Common APIs (blocked, feedback, reports, donation) ==========
 
 app.get('/api/blocked', authMiddleware, asyncHandler(async (req, res) => {
@@ -845,7 +913,7 @@ app.get('/api/admin/users', adminMiddleware, asyncHandler(async (req, res) => {
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
         avatarColor: u.avatar_color, avatarText: u.avatar_text,
         role: u.role, banned: u.banned, mutedUntil: u.muted_until,
-        points: u.points || 0, createdAt: u.created_at
+        points: u.points || 0, avatarFrame: u.avatar_frame || 0, createdAt: u.created_at
     })));
 }));
 
@@ -1098,13 +1166,14 @@ io.on('connection', (socket) => {
             const fromUser = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
             const u = fromUser.rows[0] || {};
             const bubbleStyle = u.bubble_style || 0;
+            const avatarFrame = u.avatar_frame || 0;
 
             await pool.query(
                 'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read, from_bubble_style) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
                 [id, 'private', socket.userId, to, content, messageType || 'text', Date.now(), false, bubbleStyle]
             );
 
-            const msg = { id, type: 'private', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), read: false, fromBubbleStyle: bubbleStyle };
+            const msg = { id, type: 'private', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), read: false, fromBubbleStyle: bubbleStyle, fromAvatarFrame: avatarFrame };
 
             const recipientSocketId = onlineUsers[to];
             if (recipientSocketId) {
@@ -1136,13 +1205,14 @@ io.on('connection', (socket) => {
             const fromUser = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
             const u = fromUser.rows[0] || {};
             const bubbleStyle = u.bubble_style || 0;
+            const avatarFrame = u.avatar_frame || 0;
 
             await pool.query(
                 'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read, read_by, from_bubble_style) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
                 [id, 'group', socket.userId, to, content, messageType || 'text', Date.now(), true, JSON.stringify([socket.userId]), bubbleStyle]
             );
 
-            const msg = { id, type: 'group', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), readBy: [socket.userId], fromBubbleStyle: bubbleStyle };
+            const msg = { id, type: 'group', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), readBy: [socket.userId], fromBubbleStyle: bubbleStyle, fromAvatarFrame: avatarFrame };
 
             io.to(to).emit('group-message', {
                 ...msg, fromNickname: u.nickname, fromAvatarColor: u.avatar_color, fromAvatarText: u.avatar_text
