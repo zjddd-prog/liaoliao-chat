@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const multer = require('multer');
 const bcrypt = require('bcryptjs');
+const compression = require('compression');
 const fs = require('fs');
 const path = require('path');
 const { pool, initTables } = require('./db');
@@ -22,7 +23,31 @@ if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 // ========== Middleware ==========
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+
+// Gzip/Brotli 压缩 — 文本资源可减少 70-80% 体积
+app.use(compression({
+    threshold: 512,     // 超过 512 字节才压缩
+    level: 6            // 压缩级别 6（平衡速度和压缩率）
+}));
+
+// 静态资源缓存策略
+app.use(express.static(path.join(__dirname, 'public'), {
+    maxAge: '1d',                     // 默认缓存 1 天
+    setHeaders: (res, filePath) => {
+        // HTML 不缓存（确保即时更新）
+        if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        }
+        // JS/CSS 带版本号，可长期缓存
+        else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+            res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
+        }
+        // 图片/字体/图标 长期缓存
+        else if (/\.(png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot)$/.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        }
+    }
+}));
 
 const storage = multer.diskStorage({
     destination: UPLOADS_DIR,
@@ -39,6 +64,27 @@ const upload = multer({
         else cb(new Error('Only images allowed'), false);
     }
 });
+
+// ========== 健康检查 & 防休眠 ==========
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', uptime: process.uptime(), time: Date.now() });
+});
+
+// 自唤醒定时器：每 10 分钟自我 ping 一次，防止 Render 免费实例休眠
+const SELF_PING_INTERVAL = 10 * 60 * 1000; // 10 分钟
+const SELF_PING_URL = process.env.SELF_URL || `http://localhost:${PORT}`;
+
+if (process.env.SELF_URL || !process.env.RENDER) {
+    setInterval(() => {
+        const protocol = SELF_PING_URL.startsWith('https') ? require('https') : require('http');
+        const req = protocol.get(`${SELF_PING_URL}/api/health`, (res) => {
+            res.resume();
+        });
+        req.on('error', () => {}); // 静默忽略错误
+        req.end();
+    }, SELF_PING_INTERVAL);
+    console.log(`[KeepAlive] 自唤醒已启动，每 10 分钟 ping ${SELF_PING_URL}/api/health`);
+}
 
 // ========== Auth Middleware (async) ==========
 
