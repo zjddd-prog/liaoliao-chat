@@ -182,6 +182,20 @@ const App = {
         });
     },
 
+    // 头像渲染：含头像框
+    renderAvatar(avatarUrl, avatarText, avatarColor, avatarFrame, size) {
+        const frameId = avatarFrame || 0;
+        const bg = avatarUrl ? 'transparent' : (avatarColor || '#667eea');
+        const content = avatarUrl
+            ? `<img src="${this.escapeAttr(avatarUrl)}" alt="">`
+            : this.escapeHtml(avatarText || '?');
+        const fontSize = Math.round((size || 40) * 0.38);
+        return `<div class="avatar-wrapper avatar-frame-${frameId}" style="width:${size}px;height:${size}px;flex-shrink:0;">
+            <div style="background:${bg};width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:700;color:white;font-size:${fontSize}px;line-height:1;">${content}</div>
+            <div class="avatar-frame-ring"></div>
+        </div>`;
+    },
+
     // ========== 认证 ==========
 
     showAuthPage() {
@@ -614,8 +628,13 @@ const App = {
     updateNavAvatar() {
         const avatar = document.getElementById('nav-avatar');
         if (!avatar) return;
-        avatar.textContent = (this.currentUser?.nickname || '?')[0];
-        avatar.style.background = this.currentUser?.avatarColor || '#667eea';
+        avatar.innerHTML = this.renderAvatar(
+            this.currentUser?.avatarUrl,
+            (this.currentUser?.nickname || '?')[0],
+            this.currentUser?.avatarColor || '#667eea',
+            this.currentUser?.avatarFrame || 0,
+            36
+        );
     },
 
     renderAll() {
@@ -672,6 +691,7 @@ const App = {
                     avatarColor: f.avatarColor,
                     avatarText: f.avatarText,
                     avatarUrl: f.avatarUrl,
+                    avatarFrame: f.avatarFrame || 0,
                     lastMsg: f.lastMsg ? f.lastMsg.content : '',
                     time: f.lastMsg ? this.formatTime(f.lastMsg.timestamp) : '',
                     unread: f.unread || 0,
@@ -749,7 +769,7 @@ const App = {
                     : this.escapeHtml(displayText);
                 return `
                     <div class="chat-item ${isActive ? 'active' : ''}" data-chat-type="${this.escapeAttr(item.type)}" data-chat-id="${this.escapeAttr(item.id)}" data-chat-name="${this.escapeAttr(item.name)}">
-                        <div class="chat-avatar" style="background:${avatarBg};">${avatarHTML}</div>
+                        <div class="chat-avatar" style="position:relative;">${this.renderAvatar(item.avatarUrl, displayText, avatarBg, item.avatarFrame, 46)}</div>
                         <div class="chat-info" style="cursor:pointer;">
                             <div class="chat-name">${onlineDot} ${this.escapeHtml(item.name)} ${memberTag}</div>
                             <div class="chat-last-msg">${item.lastMsg ? this.escapeHtml(item.lastMsg) : t('chat.startChat')}</div>
@@ -886,6 +906,15 @@ const App = {
 
         // 后台加载消息（不阻塞UI）
         await this.loadMessages();
+
+        // 标记已读后刷新未读badge和聊天列表
+        this.updateMessageBadge();
+        if (!isMobile) this.refreshChatListDebounced();
+
+        // 切换侧边栏视图到"消息"（确保从通讯录/发现页点击后回到聊天列表）
+        if (this.currentView !== 'chats') {
+            this.switchView('chats');
+        }
 
         // 绑定滚动监听（先移除旧的，避免累积）
         const msgArea = document.getElementById('messages-area');
@@ -1225,9 +1254,7 @@ const App = {
 
         // 对方消息显示头像
         const avatarHTML = !isSelf
-            ? `<div class="msg-avatar" style="background:${msg.fromAvatarUrl ? 'transparent' : (msg.fromAvatarColor || '#667eea')};align-self:flex-start;">
-                 ${msg.fromAvatarUrl ? `<img src="${this.escapeAttr(msg.fromAvatarUrl)}" alt="">` : this.escapeHtml(msg.fromAvatarText || '?')}
-               </div>`
+            ? this.renderAvatar(msg.fromAvatarUrl, msg.fromAvatarText || '?', msg.fromAvatarColor || '#667eea', msg.fromAvatarFrame || 0, 36)
             : '';
 
         const bubbleClass = isSelf
@@ -1357,7 +1384,7 @@ const App = {
                         : this.escapeHtml(f.avatarText || f.nickname.slice(0, 1));
                     return `
                         <div class="contact-item" data-chat-type="private" data-chat-id="${escId}" data-chat-name="${this.escapeAttr(f.nickname)}">
-                            <div class="contact-avatar" style="background:${avatarBg};">${avatarContent}</div>
+                            <div class="contact-avatar">${this.renderAvatar(f.avatarUrl, f.avatarText || f.nickname.slice(0, 1), avatarBg, f.avatarFrame, 46)}</div>
                             <div class="contact-info" style="cursor:pointer;">
                                 <div class="contact-name">${this.escapeHtml(f.nickname)} ${isOnline ? '<span style="color:#43e97b;font-size:10px;">● 在线</span>' : ''}</div>
                                 <div class="contact-bio">${this.escapeHtml(f.bio || '')}</div>
@@ -2370,6 +2397,76 @@ const App = {
         }
     },
 
+    // ========== 头像框商城 ==========
+
+    async showFrameShop() {
+        try {
+            const data = await this.api('/api/avatar-frames');
+            const body = `
+                <div class="frame-shop">
+                    <p style="font-size:13px;color:var(--text-light);margin-bottom:12px;">
+                        🪙 当前积分：<b>${data.points}</b> | 选择喜欢的头像框，为你的头像增添飞行元素！
+                    </p>
+                    <div class="frame-shop-grid">
+                        ${data.frames.map(f => {
+                            const badgeHTML = f.equipped ? '<span class="frame-badge equipped-badge">使用中</span>'
+                                : f.owned ? '<span class="frame-badge owned">已拥有</span>'
+                                : f.price > 0 ? '<span class="frame-badge locked">🔒</span>'
+                                : '';
+                            const actionHTML = f.equipped ? '<button class="btn-secondary btn-sm" disabled>使用中</button>'
+                                : f.owned ? '<button class="btn-primary btn-sm" onclick="App.equipFrame(' + f.id + ')">装备</button>'
+                                : f.price === 0 ? '<button class="btn-primary btn-sm" onclick="App.equipFrame(0)">使用默认</button>'
+                                : `<button class="btn-primary btn-sm" onclick="App.purchaseFrame(${f.id})" ${data.points < f.price ? 'disabled' : ''}>
+                                    🪙${f.price} 兑换
+                                </button>`;
+                            return `
+                            <div class="frame-card ${f.equipped ? 'equipped' : ''}">
+                                ${badgeHTML}
+                                <div class="frame-preview avatar-frame-${f.id}">
+                                    <span style="font-size:20px;">${f.icon || '👤'}</span>
+                                    <div class="avatar-frame-ring"></div>
+                                </div>
+                                <div class="frame-name">${f.name}</div>
+                                <div class="frame-desc">${f.desc}</div>
+                                <div class="frame-price">${f.price > 0 ? '🪙' + f.price : '免费'}</div>
+                                <div style="margin-top:6px;">${actionHTML}</div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+            this.showModal('🎨 头像框商城', body, '');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async purchaseFrame(frameId) {
+        try {
+            const data = await this.api('/api/avatar-frames/purchase', 'POST', { frameId });
+            this.currentUser.points = data.points;
+            this.currentUser.avatarFrame = data.avatarFrame;
+            this.updatePointsDisplay();
+            this.closeModal();
+            this.showFrameShop();
+            this.toast(data.message, 'success');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async equipFrame(frameId) {
+        try {
+            const data = await this.api('/api/avatar-frames/equip', 'PUT', { frameId });
+            this.currentUser.avatarFrame = data.avatarFrame;
+            this.closeModal();
+            this.showFrameShop();
+            this.toast('头像框已装备', 'success');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
     // ========== 用户主页 ==========
 
     showMyProfile() {
@@ -2469,14 +2566,11 @@ const App = {
                     ${user.gender ? `<div class="profile-info-row"><span class="profile-info-label">⚧ 性别</span><span class="profile-info-value">${userGender}</span></div>` : ''}
                 </div>
             `;
-            const avatarHTML = user.avatarUrl
-                ? `<img src="${user.avatarUrl}" alt="">`
-                : (user.avatarText || user.nickname?.slice(0,1) || '?');
-            const avatarBg = user.avatarUrl ? 'transparent' : (user.avatarColor || '#667eea');
+            const avatarRender80 = this.renderAvatar(user.avatarUrl, user.avatarText || user.nickname?.slice(0,1) || '?', user.avatarColor || '#667eea', user.avatarFrame || 0, 80);
 
             const avatarEditHTML = isSelf ? `
                 <div class="profile-avatar-editor">
-                    <div class="profile-avatar-large" style="background:${avatarBg}">${avatarHTML}</div>
+                    ${avatarRender80}
                     <div class="profile-avatar-actions">
                         <label class="btn-primary btn-sm">
                             <input type="file" id="profile-avatar-input" accept="image/*" style="display:none;" onchange="App.uploadAvatar(this)">
@@ -2493,7 +2587,7 @@ const App = {
                 </div>
             ` : `
                 <div class="profile-avatar-editor">
-                    <div class="profile-avatar-large" style="background:${avatarBg}">${avatarHTML}</div>
+                    ${avatarRender80}
                 </div>
             `;
 
@@ -2530,6 +2624,10 @@ const App = {
                         <button class="profile-quick-btn" onclick="App.showBubbleShop()">
                             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                             <span>${t('nav.bubble')}</span>
+                        </button>
+                        <button class="profile-quick-btn" onclick="App.showFrameShop()">
+                            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                            <span>头像框</span>
                         </button>
                         <button class="profile-quick-btn" onclick="App.showDonation()">
                             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
