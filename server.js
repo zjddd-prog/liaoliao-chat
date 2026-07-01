@@ -131,7 +131,8 @@ app.post('/api/register', asyncHandler(async (req, res) => {
         user: { id, username, nickname: nickname || username, bio: bio || '',
                 avatarColor: colors[Math.floor(Math.random() * colors.length)],
                 avatarText: (nickname || username).slice(0, 1).toUpperCase(),
-                role: 'user', createdAt: Date.now() }
+                role: 'user', createdAt: Date.now(),
+                points: 0, bubbleStyle: 0, bubblePurchases: {}, lastCheckinDate: null }
     });
 }));
 
@@ -149,7 +150,9 @@ app.post('/api/login', asyncHandler(async (req, res) => {
         token: user.id,
         user: { id: user.id, username: user.username, nickname: user.nickname, bio: user.bio,
                 avatarColor: user.avatar_color, avatarText: user.avatar_text,
-                avatarUrl: user.avatar_url, role: user.role, createdAt: user.created_at }
+                avatarUrl: user.avatar_url, role: user.role, createdAt: user.created_at,
+                points: user.points || 0, bubbleStyle: user.bubble_style || 0,
+                bubblePurchases: user.bubble_purchases || {}, lastCheckinDate: user.last_checkin_date }
     });
 }));
 
@@ -158,7 +161,9 @@ app.get('/api/me', authMiddleware, (req, res) => {
     const user = req.user;
     res.json({ id: user.id, username: user.username, nickname: user.nickname, bio: user.bio,
                avatarColor: user.avatarColor, avatarText: user.avatarText,
-               avatarUrl: user.avatarUrl, role: user.role, createdAt: user.createdAt });
+               avatarUrl: user.avatarUrl, role: user.role, createdAt: user.createdAt,
+               points: user.points || 0, bubbleStyle: user.bubbleStyle || 0,
+               bubblePurchases: user.bubblePurchases || {}, lastCheckinDate: user.lastCheckinDate });
 });
 
 // Update profile
@@ -214,7 +219,7 @@ app.delete('/api/avatar', authMiddleware, asyncHandler(async (req, res) => {
 // Get all users
 app.get('/api/users', authMiddleware, asyncHandler(async (req, res) => {
     const result = await pool.query(
-        `SELECT u.id, u.username, u.nickname, u.bio, u.avatar_color, u.avatar_text, u.avatar_url, u.banned, u.created_at,
+        `SELECT u.id, u.username, u.nickname, u.bio, u.avatar_color, u.avatar_text, u.avatar_url, u.banned, u.muted_until, u.points, u.created_at,
                 EXISTS(SELECT 1 FROM friendships f WHERE f.status='accepted' AND
                        ((f.user_id=$1 AND f.friend_id=u.id) OR (f.user_id=u.id AND f.friend_id=$1))) as is_friend
          FROM users u WHERE u.id != $1 AND u.role != 'system'`,
@@ -223,8 +228,31 @@ app.get('/api/users', authMiddleware, asyncHandler(async (req, res) => {
     res.json(result.rows.map(u => ({
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
         avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url,
-        banned: u.banned, createdAt: u.created_at, isFriend: u.is_friend
+        banned: u.banned, mutedUntil: u.muted_until, points: u.points || 0, createdAt: u.created_at, isFriend: u.is_friend
     })));
+}));
+
+app.get('/api/user/:userId', authMiddleware, asyncHandler(async (req, res) => {
+    const userId = req.params.userId;
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    const u = result.rows[0];
+
+    const momentsResult = await pool.query(
+        'SELECT * FROM moments WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20',
+        [userId]
+    );
+
+    res.json({
+        id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
+        avatarColor: u.avatar_color, avatarText: u.avatar_text, avatarUrl: u.avatar_url,
+        role: u.role, gender: u.gender, birthday: u.birthday, createdAt: u.created_at,
+        points: u.points || 0, bubbleStyle: u.bubble_style || 0,
+        moments: momentsResult.rows.map(m => ({
+            id: m.id, content: m.content, images: m.images || [],
+            likes: m.likes || [], comments: m.comments || [], createdAt: m.created_at
+        }))
+    });
 }));
 
 // Get friends
@@ -302,7 +330,8 @@ app.get('/api/messages/private/:userId', authMiddleware, asyncHandler(async (req
     res.json(result.rows.map(m => ({
         id: m.id, from: m.sender_id, to: m.target_id,
         content: m.content, messageType: m.message_type || 'text',
-        timestamp: m.created_at, read: m.is_read
+        timestamp: m.created_at, read: m.is_read,
+        fromBubbleStyle: m.from_bubble_style || 0
     })));
 }));
 
@@ -314,7 +343,8 @@ app.get('/api/messages/group/:groupId', authMiddleware, asyncHandler(async (req,
     res.json(result.rows.map(m => ({
         id: m.id, from: m.sender_id, to: m.target_id,
         content: m.content, messageType: m.message_type || 'text',
-        timestamp: m.created_at
+        timestamp: m.created_at, readBy: m.read_by || [],
+        fromBubbleStyle: m.from_bubble_style || 0
     })));
 }));
 
@@ -610,6 +640,186 @@ app.delete('/api/moments/:momentId', authMiddleware, asyncHandler(async (req, re
     res.json({ success: true });
 }));
 
+// ========== Check-in & Bubble APIs ==========
+
+const BUBBLE_DEFS = [
+    { id: 0, name: '晴空万里', desc: '清新天蓝，默认风格', price: 0, class: 'bubble-sky' },
+    { id: 1, name: '云霄巡航', desc: '云朵与飞机点缀', price: 30, class: 'bubble-cloud' },
+    { id: 2, name: '落日飞行', desc: '温暖的落日余晖', price: 60, class: 'bubble-sunset' },
+    { id: 3, name: '星辰航线', desc: '深邃星空与星光', price: 120, class: 'bubble-stars' },
+    { id: 4, name: '王牌机长', desc: '金色机翼，荣耀之巅', price: 180, class: 'bubble-captain' }
+];
+
+function getTodayString() {
+    return new Date().toDateString();
+}
+
+function isBubbleOwned(purchases, bubbleId, now) {
+    if (bubbleId === 0) return { owned: true, isDay: false };
+    const p = purchases[bubbleId];
+    if (!p) return { owned: false, isDay: false };
+    if (p.permanent) return { owned: true, isDay: false };
+    if (p.day && p.expires && p.expires > now) return { owned: true, isDay: true };
+    return { owned: false, isDay: false };
+}
+
+app.post('/api/checkin', authMiddleware, asyncHandler(async (req, res) => {
+    const userRes = await pool.query('SELECT points, last_checkin_date FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+    const today = getTodayString();
+    if (user.last_checkin_date === today) {
+        return res.status(400).json({ error: '今天已经签到过了' });
+    }
+    const newPoints = (user.points || 0) + 10;
+    await pool.query('UPDATE users SET points = $1, last_checkin_date = $2 WHERE id = $3', [newPoints, today, req.user.id]);
+    res.json({ points: newPoints, message: '签到成功！获得 10 积分' });
+}));
+
+app.get('/api/bubbles', authMiddleware, asyncHandler(async (req, res) => {
+    const userRes = await pool.query('SELECT points, bubble_style, bubble_purchases FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+    const purchases = user.bubble_purchases || {};
+    const points = user.points || 0;
+    const equipped = user.bubble_style || 0;
+    const now = Date.now();
+
+    const bubbles = BUBBLE_DEFS.map(b => {
+        const own = isBubbleOwned(purchases, b.id, now);
+        return {
+            ...b,
+            equipped: equipped === b.id,
+            owned: own.owned,
+            isDay: own.isDay,
+            canAfford: b.price === 0 || points >= b.price
+        };
+    });
+
+    res.json(bubbles);
+}));
+
+app.post('/api/bubbles/purchase', authMiddleware, asyncHandler(async (req, res) => {
+    const { bubbleId, duration } = req.body;
+    const id = parseInt(bubbleId, 10);
+    const bubble = BUBBLE_DEFS.find(b => b.id === id);
+    if (!bubble) return res.status(404).json({ error: '气泡不存在' });
+    if (bubble.price === 0 && id !== 0) return res.status(400).json({ error: '该气泡无需购买' });
+
+    const userRes = await pool.query('SELECT points, bubble_purchases, bubble_style FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+    const purchases = user.bubble_purchases || {};
+    const now = Date.now();
+    const own = isBubbleOwned(purchases, id, now);
+    if (own.owned && !own.isDay) {
+        return res.status(400).json({ error: '已永久拥有该气泡' });
+    }
+
+    const isDay = duration === 'day';
+    const price = isDay ? Math.max(1, Math.floor(bubble.price * 0.3)) : bubble.price;
+    if ((user.points || 0) < price) return res.status(400).json({ error: '积分不足' });
+
+    const newPurchases = { ...purchases };
+    if (isDay) {
+        const expires = now + 24 * 60 * 60 * 1000;
+        newPurchases[id] = { day: true, expires };
+    } else {
+        newPurchases[id] = { permanent: true };
+    }
+
+    const newPoints = (user.points || 0) - price;
+    const newBubbleStyle = id;
+    await pool.query(
+        'UPDATE users SET points = $1, bubble_purchases = $2, bubble_style = $3 WHERE id = $4',
+        [newPoints, JSON.stringify(newPurchases), newBubbleStyle, req.user.id]
+    );
+
+    res.json({ points: newPoints, bubbleStyle: newBubbleStyle, message: `购买成功！已装备「${bubble.name}」` });
+}));
+
+app.put('/api/bubbles/equip', authMiddleware, asyncHandler(async (req, res) => {
+    const { bubbleId } = req.body;
+    const id = parseInt(bubbleId, 10);
+    const bubble = BUBBLE_DEFS.find(b => b.id === id);
+    if (!bubble) return res.status(404).json({ error: '气泡不存在' });
+
+    const userRes = await pool.query('SELECT bubble_purchases FROM users WHERE id = $1', [req.user.id]);
+    const user = userRes.rows[0];
+    const now = Date.now();
+    const own = isBubbleOwned(user.bubble_purchases || {}, id, now);
+    if (!own.owned) return res.status(400).json({ error: '尚未拥有该气泡' });
+
+    await pool.query('UPDATE users SET bubble_style = $1 WHERE id = $2', [id, req.user.id]);
+    res.json({ bubbleStyle: id });
+}));
+
+// ========== User Common APIs (blocked, feedback, reports, donation) ==========
+
+app.get('/api/blocked', authMiddleware, asyncHandler(async (req, res) => {
+    const userRes = await pool.query('SELECT blocked_users FROM users WHERE id = $1', [req.user.id]);
+    const blocked = userRes.rows[0].blocked_users || [];
+    res.json({ blockedUsers: blocked });
+}));
+
+app.post('/api/block/:userId', authMiddleware, asyncHandler(async (req, res) => {
+    const targetId = req.params.userId;
+    if (targetId === req.user.id) return res.status(400).json({ error: '不能拉黑自己' });
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [targetId]);
+    if (userCheck.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+
+    const userRes = await pool.query('SELECT blocked_users FROM users WHERE id = $1', [req.user.id]);
+    const blocked = userRes.rows[0].blocked_users || [];
+    if (blocked.includes(targetId)) return res.status(400).json({ error: '已经拉黑该用户' });
+    blocked.push(targetId);
+
+    await pool.query('UPDATE users SET blocked_users = $1 WHERE id = $2', [JSON.stringify(blocked), req.user.id]);
+    res.json({ success: true, message: '已拉黑该用户' });
+}));
+
+app.post('/api/unblock/:userId', authMiddleware, asyncHandler(async (req, res) => {
+    const targetId = req.params.userId;
+    const userRes = await pool.query('SELECT blocked_users FROM users WHERE id = $1', [req.user.id]);
+    const blocked = userRes.rows[0].blocked_users || [];
+    if (!blocked.includes(targetId)) return res.status(400).json({ error: '未拉黑该用户' });
+
+    const newBlocked = blocked.filter(id => id !== targetId);
+    await pool.query('UPDATE users SET blocked_users = $1 WHERE id = $2', [JSON.stringify(newBlocked), req.user.id]);
+    res.json({ success: true, message: '已取消拉黑' });
+}));
+
+app.post('/api/feedback', authMiddleware, asyncHandler(async (req, res) => {
+    const { content } = req.body;
+    if (!content || content.length < 2) return res.status(400).json({ error: '反馈内容太短' });
+    const id = 'fb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await pool.query(
+        'INSERT INTO feedbacks (id, user_id, nickname, avatar_color, avatar_text, content, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [id, req.user.id, req.user.nickname, req.user.avatarColor, req.user.avatarText, content, 'pending', Date.now()]
+    );
+    res.json({ success: true, message: '反馈已提交' });
+}));
+
+app.post('/api/report', authMiddleware, upload.array('images', 3), asyncHandler(async (req, res) => {
+    const { targetUserId, content } = req.body;
+    if (!targetUserId) return res.status(400).json({ error: '请选择举报对象' });
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [targetUserId]);
+    if (userCheck.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+
+    const imageUrls = req.files ? req.files.map(f => `/uploads/${f.filename}`) : [];
+    const id = 'rp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await pool.query(
+        'INSERT INTO reports (id, reporter_id, target_user_id, content, images, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [id, req.user.id, targetUserId, content || '', JSON.stringify(imageUrls), 'pending', Date.now()]
+    );
+    res.json({ success: true, message: '举报已提交' });
+}));
+
+app.get('/api/donation', asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM donations LIMIT 1');
+    if (result.rows.length === 0) {
+        return res.json({ wechat: '', alipay: '' });
+    }
+    const d = result.rows[0];
+    res.json({ wechat: d.wechat || '', alipay: d.alipay || '' });
+}));
+
 // ========== Admin APIs ==========
 
 app.get('/api/admin/users', adminMiddleware, asyncHandler(async (req, res) => {
@@ -617,7 +827,8 @@ app.get('/api/admin/users', adminMiddleware, asyncHandler(async (req, res) => {
     res.json(result.rows.map(u => ({
         id: u.id, username: u.username, nickname: u.nickname, bio: u.bio,
         avatarColor: u.avatar_color, avatarText: u.avatar_text,
-        role: u.role, banned: u.banned, createdAt: u.created_at
+        role: u.role, banned: u.banned, mutedUntil: u.muted_until,
+        points: u.points || 0, createdAt: u.created_at
     })));
 }));
 
@@ -726,6 +937,95 @@ app.get('/api/admin/stats', adminMiddleware, asyncHandler(async (req, res) => {
     });
 }));
 
+app.post('/api/admin/promote/:userId', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    if (result.rows[0].role === 'admin' || result.rows[0].role === 'super_admin') {
+        return res.status(400).json({ error: '该用户已经是管理员' });
+    }
+    await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [req.params.userId]);
+    res.json({ success: true, message: '已提升为管理员', role: 'admin' });
+}));
+
+app.post('/api/admin/mute/:userId', adminMiddleware, asyncHandler(async (req, res) => {
+    const { duration } = req.body;
+    const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.userId]);
+    if (userRes.rows.length === 0) return res.status(404).json({ error: '用户不存在' });
+    if (userRes.rows[0].role === 'admin') return res.status(400).json({ error: '不能禁言管理员' });
+
+    let mutedUntil = null;
+    if (duration === '1day') mutedUntil = Date.now() + 24 * 60 * 60 * 1000;
+    else if (duration === '7days') mutedUntil = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    else mutedUntil = -1; // permanent
+
+    await pool.query('UPDATE users SET muted_until = $1 WHERE id = $2', [mutedUntil, req.params.userId]);
+    res.json({ success: true, mutedUntil });
+}));
+
+app.post('/api/admin/unmute/:userId', adminMiddleware, asyncHandler(async (req, res) => {
+    await pool.query('UPDATE users SET muted_until = NULL WHERE id = $1', [req.params.userId]);
+    res.json({ success: true });
+}));
+
+app.get('/api/admin/feedbacks', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM feedbacks ORDER BY created_at DESC');
+    res.json(result.rows.map(f => ({
+        id: f.id, userId: f.user_id, nickname: f.nickname,
+        avatarColor: f.avatar_color, avatarText: f.avatar_text,
+        content: f.content, status: f.status, createdAt: f.created_at
+    })));
+}));
+
+app.post('/api/admin/feedback/:id/resolve', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM feedbacks WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '反馈不存在' });
+    const newStatus = result.rows[0].status === 'resolved' ? 'pending' : 'resolved';
+    await pool.query('UPDATE feedbacks SET status = $1 WHERE id = $2', [newStatus, req.params.id]);
+    res.json({ success: true, status: newStatus });
+}));
+
+app.get('/api/admin/reports', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query(
+        `SELECT r.*, u.nickname as target_nickname
+         FROM reports r
+         LEFT JOIN users u ON r.target_user_id = u.id
+         ORDER BY r.created_at DESC`
+    );
+    res.json(result.rows.map(r => ({
+        id: r.id, reporterId: r.reporter_id, targetUserId: r.target_user_id,
+        targetNickname: r.target_nickname || '未知', content: r.content,
+        images: r.images || [], status: r.status, createdAt: r.created_at
+    })));
+}));
+
+app.post('/api/admin/report/:id/resolve', adminMiddleware, asyncHandler(async (req, res) => {
+    const result = await pool.query('SELECT * FROM reports WHERE id = $1', [req.params.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: '举报不存在' });
+    const newStatus = result.rows[0].status === 'resolved' ? 'pending' : 'resolved';
+    await pool.query('UPDATE reports SET status = $1 WHERE id = $2', [newStatus, req.params.id]);
+    res.json({ success: true, status: newStatus });
+}));
+
+app.post('/api/admin/donation', adminMiddleware, upload.fields([{ name: 'wechat', maxCount: 1 }, { name: 'alipay', maxCount: 1 }]), asyncHandler(async (req, res) => {
+    const existing = await pool.query('SELECT * FROM donations LIMIT 1');
+    const updates = {};
+    if (req.files.wechat && req.files.wechat[0]) updates.wechat = '/uploads/' + req.files.wechat[0].filename;
+    if (req.files.alipay && req.files.alipay[0]) updates.alipay = '/uploads/' + req.files.alipay[0].filename;
+
+    if (existing.rows.length === 0) {
+        await pool.query(
+            'INSERT INTO donations (id, wechat, alipay) VALUES ($1,$2,$3)',
+            ['donation_default', updates.wechat || '', updates.alipay || '']
+        );
+    } else {
+        const current = existing.rows[0];
+        const wechat = updates.wechat || current.wechat;
+        const alipay = updates.alipay || current.alipay;
+        await pool.query('UPDATE donations SET wechat = $1, alipay = $2 WHERE id = $3', [wechat, alipay, current.id]);
+    }
+    res.json({ success: true });
+}));
+
 // ========== Socket.IO ==========
 
 const onlineUsers = {};
@@ -766,18 +1066,28 @@ io.on('connection', (socket) => {
     socket.on('private-message', async (data) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
+
+        // Check muted
+        const senderRes = await pool.query('SELECT muted_until FROM users WHERE id = $1', [socket.userId]);
+        const mutedUntil = senderRes.rows[0]?.muted_until;
+        if (mutedUntil && (mutedUntil === -1 || mutedUntil > Date.now())) {
+            socket.emit('message-error', { error: '您已被禁言' });
+            return;
+        }
+
         const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
         try {
-            await pool.query(
-                'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-                [id, 'private', socket.userId, to, content, messageType || 'text', Date.now(), false]
-            );
-
             const fromUser = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
             const u = fromUser.rows[0] || {};
+            const bubbleStyle = u.bubble_style || 0;
 
-            const msg = { id, type: 'private', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), read: false };
+            await pool.query(
+                'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read, from_bubble_style) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+                [id, 'private', socket.userId, to, content, messageType || 'text', Date.now(), false, bubbleStyle]
+            );
+
+            const msg = { id, type: 'private', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), read: false, fromBubbleStyle: bubbleStyle };
 
             const recipientSocketId = onlineUsers[to];
             if (recipientSocketId) {
@@ -794,18 +1104,28 @@ io.on('connection', (socket) => {
     socket.on('group-message', async (data) => {
         if (!socket.userId) return;
         const { to, content, messageType } = data;
+
+        // Check muted
+        const senderRes = await pool.query('SELECT muted_until FROM users WHERE id = $1', [socket.userId]);
+        const mutedUntil = senderRes.rows[0]?.muted_until;
+        if (mutedUntil && (mutedUntil === -1 || mutedUntil > Date.now())) {
+            socket.emit('message-error', { error: '您已被禁言' });
+            return;
+        }
+
         const id = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
 
         try {
-            await pool.query(
-                'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read, read_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
-                [id, 'group', socket.userId, to, content, messageType || 'text', Date.now(), true, JSON.stringify([socket.userId])]
-            );
-
             const fromUser = await pool.query('SELECT * FROM users WHERE id = $1', [socket.userId]);
             const u = fromUser.rows[0] || {};
+            const bubbleStyle = u.bubble_style || 0;
 
-            const msg = { id, type: 'group', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), readBy: [socket.userId] };
+            await pool.query(
+                'INSERT INTO messages (id, type, sender_id, target_id, content, message_type, created_at, is_read, read_by, from_bubble_style) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',
+                [id, 'group', socket.userId, to, content, messageType || 'text', Date.now(), true, JSON.stringify([socket.userId]), bubbleStyle]
+            );
+
+            const msg = { id, type: 'group', from: socket.userId, to, content, messageType: messageType || 'text', timestamp: Date.now(), readBy: [socket.userId], fromBubbleStyle: bubbleStyle };
 
             io.to(to).emit('group-message', {
                 ...msg, fromNickname: u.nickname, fromAvatarColor: u.avatar_color, fromAvatarText: u.avatar_text
