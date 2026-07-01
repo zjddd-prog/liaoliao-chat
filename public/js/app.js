@@ -182,18 +182,49 @@ const App = {
         });
     },
 
-    // 头像渲染：含头像框
+    // 头像渲染：含头像框（图片 404 时自动回退到文字头像）
     renderAvatar(avatarUrl, avatarText, avatarColor, avatarFrame, size) {
         const frameId = avatarFrame || 0;
-        const bg = avatarUrl ? 'transparent' : (avatarColor || '#667eea');
+        const fallbackColor = avatarColor || '#667eea';
+        const fallbackText = this.escapeHtml(avatarText || '?');
+        const bg = avatarUrl ? 'transparent' : fallbackColor;
         const content = avatarUrl
-            ? `<img src="${this.escapeAttr(avatarUrl)}" alt="">`
-            : this.escapeHtml(avatarText || '?');
+            ? `<img src="${this.escapeAttr(avatarUrl)}" alt="" onerror="App.onAvatarError(this,'${this.escapeAttr(fallbackText)}','${this.escapeAttr(fallbackColor)}')">`
+            : fallbackText;
         const fontSize = Math.round((size || 40) * 0.38);
         return `<div class="avatar-wrapper avatar-frame-${frameId}" style="width:${size}px;height:${size}px;flex-shrink:0;">
             <div style="background:${bg};width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:700;color:white;font-size:${fontSize}px;line-height:1;">${content}</div>
             <div class="avatar-frame-ring"></div>
         </div>`;
+    },
+
+    // 头像图片加载失败时回退到文字头像，并自动清除无效 URL
+    onAvatarError(img, fallbackText, fallbackColor) {
+        img.onerror = null;
+        const inner = img.parentNode;
+        if (inner) {
+            inner.innerHTML = '';
+            inner.style.background = fallbackColor;
+            inner.appendChild(document.createTextNode(fallbackText));
+        }
+        // 如果是当前用户自己的头像，通知服务器清除无效 URL，避免下次仍然显示破图
+        if (this.currentUser && img.closest('#nav-avatar')) {
+            this.api('/api/avatar', 'DELETE').then(() => {
+                this.currentUser.avatarUrl = null;
+                this.updateNavAvatar();
+            }).catch(() => {});
+        }
+    },
+
+    // 聊天图片加载失败时显示占位提示
+    onMsgImageError(img) {
+        img.onerror = null;
+        img.style.display = 'none';
+        const placeholder = document.createElement('div');
+        placeholder.className = 'msg-image-error';
+        placeholder.textContent = '图片已失效';
+        placeholder.style.cssText = 'padding:12px 16px;background:var(--bg);border-radius:12px;color:var(--text-light);font-size:13px;text-align:center;';
+        if (img.parentNode) img.parentNode.insertBefore(placeholder, img);
     },
 
     // ========== 认证 ==========
@@ -1242,7 +1273,7 @@ const App = {
         // 内容
         let contentHTML;
         if (msg.messageType === 'image') {
-            contentHTML = `<img class="msg-image" src="${this.escapeAttr(msg.content)}" ${this._ao('previewImage', msg.content)}>`;
+            contentHTML = `<img class="msg-image" src="${this.escapeAttr(msg.content)}" onerror="App.onMsgImageError(this)" ${this._ao('previewImage', msg.content)}>`;
         } else {
             contentHTML = this.escapeHtml(msg.content);
         }
