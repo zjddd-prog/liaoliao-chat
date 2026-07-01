@@ -464,7 +464,7 @@ const App = {
         this.socket.on('group-deleted', (data) => {
             if (this.currentChatType === 'group' && this.currentChatId === data.groupId) {
                 this.toast('该群已被群主删除', 'warning');
-                this.switchView('messages');
+                this.closeChatMobile();
             }
             this.refreshChatListDebounced();
         });
@@ -841,7 +841,7 @@ const App = {
                     <div class="chat-header-name">${escName}</div>
                     <div class="chat-header-status">${type === 'private' ? (this.onlineUsers.includes(id) ? t('chat.online') : t('chat.offline')) : t('chat.group')}</div>
                 </div>
-                ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${escId}')">${t('chat.members')}</button>` : ''}
+                ${type === 'group' ? `<button class="chat-header-members-btn" onclick="App.showGroupMembers('${escId}')">${t('chat.members')}</button><button class="chat-header-settings-btn" onclick="App.showGroupSettings('${escId}')" title="群设置">⚙️</button>` : ''}
                 ${type === 'private' ? `<button class="chat-header-report-btn" onclick="App.showReportModal('${escId}','${this.escapeAttr(name)}')" title="${t('report.title') || '举报'}">
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
                 </button>` : ''}
@@ -1703,7 +1703,10 @@ const App = {
                 if (groups.length === 0) {
                     html += `<div class="discover-empty">还没有群聊，快创建一个吧</div>`;
                 }
-            } catch {}
+            } catch (e) {
+                console.error('Failed to load discover groups:', e);
+                html += `<div class="discover-empty" style="color:#e74c3c;">群聊加载失败，请刷新重试</div>`;
+            }
 
             // 好友
             if (friends.length > 0) {
@@ -1800,6 +1803,57 @@ const App = {
             }
 
             this.showModal('群成员', body + actionButtons, '');
+        } catch (e) {
+            this.toast(e.message, 'error');
+        }
+    },
+
+    async showGroupSettings(groupId) {
+        try {
+            const groups = await this.api('/api/groups/discover');
+            const group = groups.find(g => g.id === groupId);
+            if (!group) { this.toast('群不存在', 'error'); return; }
+
+            const isOwner = group.ownerId === (this.currentUser?.id);
+            const isMember = group.isMember;
+
+            let body = `<div style="padding:8px 0;">
+                <div style="background:var(--bg-light);border-radius:8px;padding:12px;margin-bottom:16px;">
+                    <div style="font-weight:700;font-size:15px;">${this.escapeHtml(group.name)}</div>
+                    <div style="font-size:12px;color:var(--text-light);margin-top:4px;">
+                        ${group.description || '暂无简介'} · ${group.memberCount}人 · ${group.type === 'private' ? '🔒 私密群' : '🌐 公开群'}
+                    </div>
+                </div>
+            `;
+
+            if (!isMember) {
+                body += `<div style="text-align:center;color:var(--text-light);padding:20px;">你还未加入该群聊</div>`;
+            } else {
+                // 群成员入口
+                body += `<div class="settings-item" onclick="App.closeModal();App.showGroupMembers('${this.escapeAttr(groupId)}')" style="padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-bottom:8px;background:var(--bg-light);">
+                    <span style="font-size:18px;">👥</span>
+                    <div style="flex:1;"><div style="font-weight:600;">查看群成员</div><div style="font-size:12px;color:var(--text-light);">${group.memberCount} 名成员</div></div>
+                    <span style="color:var(--text-light);">›</span>
+                </div>`;
+
+                if (isOwner) {
+                    body += `<div onclick="App.closeModal();App.deleteGroup('${this.escapeAttr(groupId)}')" style="padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-bottom:8px;background:var(--bg-light);">
+                        <span style="font-size:18px;">🗑️</span>
+                        <div style="flex:1;"><div style="font-weight:600;color:#e74c3c;">删除群聊</div><div style="font-size:12px;color:var(--text-light);">群主专属，所有消息将被清除</div></div>
+                        <span style="color:var(--text-light);">›</span>
+                    </div>`;
+                } else {
+                    body += `<div onclick="App.closeModal();App.leaveGroup('${this.escapeAttr(groupId)}')" style="padding:12px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;margin-bottom:8px;background:var(--bg-light);">
+                        <span style="font-size:18px;">🚪</span>
+                        <div style="flex:1;"><div style="font-weight:600;color:#e67e22;">退出群聊</div><div style="font-size:12px;color:var(--text-light);">退出后将不再接收群消息</div></div>
+                        <span style="color:var(--text-light);">›</span>
+                    </div>`;
+                }
+            }
+
+            body += `</div>`;
+
+            this.showModal('⚙️ 群设置', body, '');
         } catch (e) {
             this.toast(e.message, 'error');
         }
@@ -3250,7 +3304,7 @@ const App = {
             this.toast('群聊已删除', 'success');
             // 如果当前正在该群聊天，退回消息列表
             if (this.currentChatType === 'group' && this.currentChatId === groupId) {
-                this.switchView('messages');
+                this.closeChatMobile();
             }
             this.renderDiscover();
             this.renderChatList();
@@ -3267,7 +3321,7 @@ const App = {
             this.closeModal();
             this.toast('已退出群聊', 'success');
             if (this.currentChatType === 'group' && this.currentChatId === groupId) {
-                this.switchView('messages');
+                this.closeChatMobile();
             }
             this.renderDiscover();
             this.renderChatList();
