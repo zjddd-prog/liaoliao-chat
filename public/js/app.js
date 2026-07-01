@@ -153,6 +153,35 @@ const App = {
         return data;
     },
 
+    // 客户端图片压缩：缩小尺寸+降低质量，大幅减少上传体积
+    compressImage(file, maxWidth = 1200, quality = 0.7) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    let w = img.width, h = img.height;
+                    if (w > maxWidth || h > maxWidth) {
+                        if (w > h) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+                        else { w = Math.round(w * maxWidth / h); h = maxWidth; }
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = w; canvas.height = h;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, w, h);
+                    canvas.toBlob((blob) => {
+                        if (blob) resolve(blob);
+                        else reject(new Error('压缩失败'));
+                    }, 'image/jpeg', quality);
+                };
+                img.onerror = () => reject(new Error('图片加载失败'));
+                img.src = e.target.result;
+            };
+            reader.onerror = () => reject(new Error('读取图片失败'));
+            reader.readAsDataURL(file);
+        });
+    },
+
     // ========== 认证 ==========
 
     showAuthPage() {
@@ -1122,14 +1151,13 @@ const App = {
         input.onchange = async () => {
             const file = input.files[0];
             if (!file) return;
-            if (file.size > 3 * 1024 * 1024) {
-                this.toast(t('toast.imageTooBig'), 'error');
-                return;
-            }
 
             try {
+                this.toast('正在压缩并上传...', 'info');
+                // 客户端压缩图片
+                const compressed = await this.compressImage(file, 1200, 0.7);
                 const formData = new FormData();
-                formData.append('image', file);
+                formData.append('image', compressed, 'image.jpg');
                 const data = await this.apiUpload('/api/upload', formData);
 
                 // 通过Socket发送图片消息
@@ -1451,17 +1479,15 @@ const App = {
         document.getElementById('post-image-input').addEventListener('change', async (e) => {
             const files = Array.from(e.target.files);
             for (const file of files) {
-                if (file.size > 3 * 1024 * 1024) {
-                    this.toast(`${file.name} 超过3MB`, 'error');
-                    continue;
-                }
                 if (imageUrls.length >= 9) {
                     this.toast(t('toast.max9Images'), 'error');
                     break;
                 }
                 try {
+                    this.toast('正在压缩并上传...', 'info');
+                    const compressed = await this.compressImage(file, 1200, 0.7);
                     const formData = new FormData();
-                    formData.append('image', file);
+                    formData.append('image', compressed, 'image.jpg');
                     const data = await this.apiUpload('/api/upload', formData);
                     imageUrls.push(data.url);
                     this.renderPostImages(imageUrls);
@@ -2552,9 +2578,12 @@ const App = {
     async uploadAvatar(input) {
         const file = input.files[0];
         if (!file) return;
-        const formData = new FormData();
-        formData.append('avatar', file);
         try {
+            this.toast('正在压缩头像...', 'info');
+            // 头像只需 400px 宽即可，质量 0.7
+            const compressed = await this.compressImage(file, 400, 0.7);
+            const formData = new FormData();
+            formData.append('avatar', compressed, 'avatar.jpg');
             const res = await fetch('/api/avatar', {
                 method: 'POST',
                 headers: { 'Authorization': 'Bearer ' + this.token },
