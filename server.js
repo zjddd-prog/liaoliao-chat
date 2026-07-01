@@ -315,9 +315,13 @@ app.get('/api/messages/private/:userId', authMiddleware, asyncHandler(async (req
     const otherUserId = req.params.userId;
 
     const result = await pool.query(
-        `SELECT * FROM messages WHERE type='private' AND
-         ((sender_id=$1 AND target_id=$2) OR (sender_id=$2 AND target_id=$1))
-         ORDER BY created_at ASC`,
+        `SELECT m.*, u.nickname as from_nickname, u.avatar_color as from_avatar_color,
+                u.avatar_text as from_avatar_text, u.avatar_url as from_avatar_url
+         FROM messages m
+         JOIN users u ON m.sender_id = u.id
+         WHERE m.type='private' AND
+         ((m.sender_id=$1 AND m.target_id=$2) OR (m.sender_id=$2 AND m.target_id=$1))
+         ORDER BY m.created_at ASC`,
         [req.user.id, otherUserId]
     );
 
@@ -331,20 +335,33 @@ app.get('/api/messages/private/:userId', authMiddleware, asyncHandler(async (req
         id: m.id, from: m.sender_id, to: m.target_id,
         content: m.content, messageType: m.message_type || 'text',
         timestamp: m.created_at, read: m.is_read,
-        fromBubbleStyle: m.from_bubble_style || 0
+        fromBubbleStyle: m.from_bubble_style || 0,
+        fromNickname: m.from_nickname,
+        fromAvatarColor: m.from_avatar_color,
+        fromAvatarText: m.from_avatar_text,
+        fromAvatarUrl: m.from_avatar_url
     })));
 }));
 
 app.get('/api/messages/group/:groupId', authMiddleware, asyncHandler(async (req, res) => {
     const result = await pool.query(
-        "SELECT * FROM messages WHERE type='group' AND target_id=$1 ORDER BY created_at ASC",
+        `SELECT m.*, u.nickname as from_nickname, u.avatar_color as from_avatar_color,
+                u.avatar_text as from_avatar_text, u.avatar_url as from_avatar_url
+         FROM messages m
+         JOIN users u ON m.sender_id = u.id
+         WHERE m.type='group' AND m.target_id=$1
+         ORDER BY m.created_at ASC`,
         [req.params.groupId]
     );
     res.json(result.rows.map(m => ({
         id: m.id, from: m.sender_id, to: m.target_id,
         content: m.content, messageType: m.message_type || 'text',
         timestamp: m.created_at, readBy: m.read_by || [],
-        fromBubbleStyle: m.from_bubble_style || 0
+        fromBubbleStyle: m.from_bubble_style || 0,
+        fromNickname: m.from_nickname,
+        fromAvatarColor: m.from_avatar_color,
+        fromAvatarText: m.from_avatar_text,
+        fromAvatarUrl: m.from_avatar_url
     })));
 }));
 
